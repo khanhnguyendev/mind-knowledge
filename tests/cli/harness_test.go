@@ -15,6 +15,19 @@ import (
 
 var binPath string
 
+// TestMain builds the mk binary fresh for this test run and drives it via
+// exec.Command in every test below. Go's test cache keys a package's
+// cached result on that package's own source files (and whatever files it
+// reads during the run) — it has no way to know this package's real
+// subject is a binary built at runtime from internal/..., cmd/mk. So a
+// change to production code under those directories does NOT invalidate a
+// cached PASS here: `go test ./tests/cli/` can report success without
+// having run against the new code at all.
+//
+// `make test` accounts for this by always passing -count=1 for this
+// package (see the Makefile). If you run this package directly — e.g.
+// `go test ./tests/cli/...` — pass -count=1 yourself, or you may be
+// looking at a stale result.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "mk-bin-*")
 	if err != nil {
