@@ -180,3 +180,12 @@ func TestSyncNoProjects(t *testing.T) {
 		t.Errorf("stdout = %q, want []", r.stdout)
 	}
 }
+
+// TestSyncRejectsStrayArgument guards against the same silent-success
+// shape as the group-command unknown-subcommand bug: sync takes no
+// positional arguments, and leaving cobra's Args unset let it silently
+// accept and ignore one instead of erroring.
+func TestSyncRejectsStrayArgument(t *testing.T) {
+	r := mk(t, newDB(t), "sync", "bogus")
+	requireCode(t, r, 2)
+}

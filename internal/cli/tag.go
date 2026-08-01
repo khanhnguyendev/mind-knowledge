@@ -16,6 +16,8 @@ func init() {
 			"Tags cut across projects and epics, so no tag command takes " +
 			"-p/--project.",
 		PersistentPreRunE: crossProjectPreRun("tags"),
+		Args:              rejectUnknownSubcommand,
+		RunE:              showHelp,
 	}
 
 	// add

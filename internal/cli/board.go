@@ -17,6 +17,12 @@ func init() {
 	boardCmd := &cobra.Command{
 		Use:   "board",
 		Short: "Show stories grouped by epic and project",
+		// board takes no positional arguments. Leaving Args nil would let
+		// cobra's legacyArgs silently accept and ignore any stray one
+		// (board has no subcommands, so legacyArgs never even inspects
+		// them) — the same silent-success shape as the group-command bug
+		// this change accompanies, reached via a different cobra path.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := OpenStore()
 			if err != nil {

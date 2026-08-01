@@ -14,6 +14,8 @@ func init() {
 	storyCmd := &cobra.Command{
 		Use:   "story",
 		Short: "Create, edit, and move stories",
+		Args:  rejectUnknownSubcommand,
+		RunE:  showHelp,
 	}
 
 	// create

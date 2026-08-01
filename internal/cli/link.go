@@ -18,6 +18,8 @@ func init() {
 			"story, source, and wiki. An edge may join entities in different " +
 			"projects, so no link command takes -p/--project.",
 		PersistentPreRunE: crossProjectPreRun("links"),
+		Args:              rejectUnknownSubcommand,
+		RunE:              showHelp,
 	}
 
 	// add

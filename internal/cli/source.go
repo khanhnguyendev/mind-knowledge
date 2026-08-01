@@ -20,6 +20,8 @@ func init() {
 			"pass --body, --file, --asset, or pipe the text on standard input.\n\n" +
 			"Sources are cross-project, so no source command takes -p/--project.",
 		PersistentPreRunE: crossProjectPreRun("sources"),
+		Args:              rejectUnknownSubcommand,
+		RunE:              showHelp,
 	}
 
 	// add

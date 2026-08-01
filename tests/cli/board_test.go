@@ -206,3 +206,12 @@ func TestBoardProjectFlagShowsArchivedWithoutAll(t *testing.T) {
 		t.Errorf("-p flag must show archived project even without --all:\n%s", r.stdout)
 	}
 }
+
+// TestBoardRejectsStrayArgument guards against the same silent-success
+// shape as the group-command unknown-subcommand bug: board takes no
+// positional arguments, and leaving cobra's Args unset let it silently
+// accept and ignore one instead of erroring.
+func TestBoardRejectsStrayArgument(t *testing.T) {
+	r := mk(t, newDB(t), "board", "bogus")
+	requireCode(t, r, 2)
+}

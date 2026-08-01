@@ -14,6 +14,8 @@ func init() {
 	epicCmd := &cobra.Command{
 		Use:   "epic",
 		Short: "Create and move epics",
+		Args:  rejectUnknownSubcommand,
+		RunE:  showHelp,
 	}
 
 	// create

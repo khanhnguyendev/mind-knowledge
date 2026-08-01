@@ -22,6 +22,9 @@ func init() {
 			"stories, and wiki pages. Sources and links belong to no " +
 			"project, so wiki.unprocessed and wiki.dangling are always " +
 			"reported machine-wide.",
+		// doctor takes no positional arguments; see board.go's Args
+		// comment for why this must be explicit rather than left nil.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := OpenStore()
 			if err != nil {

@@ -15,6 +15,8 @@ func init() {
 		Short: "Record and read what happened",
 		Long: "The log is how the next session learns what the last one did. " +
 			"Every skill appends an entry as its final act.",
+		Args: rejectUnknownSubcommand,
+		RunE: showHelp,
 	}
 
 	// add

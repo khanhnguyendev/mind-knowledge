@@ -91,3 +91,12 @@ func TestDoctorExitsZeroEvenWithFindings(t *testing.T) {
 	// Findings are information, not failure. A skill decides what to do.
 	requireCode(t, mk(t, db, "doctor"), 0)
 }
+
+// TestDoctorRejectsStrayArgument guards against the same silent-success
+// shape as the group-command unknown-subcommand bug: doctor takes no
+// positional arguments, and leaving cobra's Args unset let it silently
+// accept and ignore one instead of erroring.
+func TestDoctorRejectsStrayArgument(t *testing.T) {
+	r := mk(t, newDB(t), "doctor", "bogus")
+	requireCode(t, r, 2)
+}

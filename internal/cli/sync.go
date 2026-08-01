@@ -18,6 +18,9 @@ func init() {
 		Long: "Reports whether each project's path still exists, is still a " +
 			"git repository, and still points at the recorded remote. It " +
 			"changes nothing.",
+		// sync takes no positional arguments; see board.go's Args comment
+		// for why this must be explicit rather than left nil.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := OpenStore()
 			if err != nil {

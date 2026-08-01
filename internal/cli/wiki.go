@@ -16,6 +16,8 @@ import (
 var wikiCmd = &cobra.Command{
 	Use:   "wiki",
 	Short: "Write and read the wiki",
+	Args:  rejectUnknownSubcommand,
+	RunE:  showHelp,
 }
 
 func init() {

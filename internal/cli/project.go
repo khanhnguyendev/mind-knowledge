@@ -14,6 +14,8 @@ func init() {
 	projectCmd := &cobra.Command{
 		Use:   "project",
 		Short: "Register and inspect projects",
+		Args:  rejectUnknownSubcommand,
+		RunE:  showHelp,
 	}
 
 	// add

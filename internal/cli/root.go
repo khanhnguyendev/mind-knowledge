@@ -48,28 +48,50 @@ func init() {
 	Root.PersistentPreRunE = checkGlobalFlags
 
 	// Root has no work of its own: no args prints help, and any
-	// unrecognized positional arg is an invalid-input error.
-	//
-	// Root.Args must be set explicitly. Cobra's Command.Find special-cases
-	// a nil Args on whichever command it resolves to: once that command
-	// has subcommands (true for Root from the moment the first entity
-	// registers one), Find raises "unknown command" itself, straight out
-	// of command resolution and before persistent flags have been parsed
-	// at all. Left alone, that would make e.g. `mk --json nonesuch`
-	// report its error as plain text instead of a JSON envelope, since
-	// flagJSON is still at its zero value when the error is produced.
-	// Giving Root a non-nil Args routes the same check through the
-	// normal execute() path instead, which parses flags first and only
-	// then validates args.
-	Root.Args = func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 {
-			return nil
-		}
-		return fmt.Errorf("%w: unknown command %q for %q", store.ErrInvalid, args[0], cmd.CommandPath())
+	// unrecognized positional arg is an invalid-input error. The same is
+	// true of every group command (project, epic, story, ...), so both
+	// fields below are shared helpers rather than one-off closures; see
+	// their doc comments for why each is required. Every group command
+	// must set the same pair — see dispatchOnly.
+	Root.Args = rejectUnknownSubcommand
+	Root.RunE = showHelp
+}
+
+// rejectUnknownSubcommand is the Args validator for a command whose only
+// job is dispatching to subcommands: it accepts zero args (so the bare
+// command falls through to RunE and prints help) and rejects one or more,
+// since anything left over at this point in the tree didn't match any
+// registered subcommand.
+//
+// It must be set explicitly rather than left nil. Cobra's Command.Find
+// special-cases a nil Args on whichever command it resolves to: once that
+// command has subcommands, Find would otherwise decide the fate of an
+// unrecognized argument itself, straight out of command resolution and
+// before persistent flags have been parsed at all. For Root specifically,
+// that would make e.g. `mk --json nonesuch` report its error as plain text
+// instead of a JSON envelope, since flagJSON is still at its zero value
+// when the error is produced. Setting Args routes the check through the
+// normal execute() path instead, which parses flags first and only then
+// validates args via ValidateArgs.
+func rejectUnknownSubcommand(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
 	}
-	Root.RunE = func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	}
+	return fmt.Errorf("%w: unknown command %q for %q", store.ErrInvalid, args[0], cmd.CommandPath())
+}
+
+// showHelp is RunE for a dispatch-only command: it has no work of its own,
+// so a bare invocation just prints help.
+//
+// Setting it is not just about the empty-args case: cobra's execute() will
+// not even call ValidateArgs (and so never reaches rejectUnknownSubcommand)
+// unless the command is Runnable(), i.e. has a Run or RunE. Without RunE, a
+// command with subcommands but no args validator of its own falls through
+// to execute()'s "not runnable" branch and prints help with exit 0 for
+// *any* input, including an unrecognized subcommand — which is the bug
+// rejectUnknownSubcommand exists to fix. The two must be set together.
+func showHelp(cmd *cobra.Command, args []string) error {
+	return cmd.Help()
 }
 
 // checkGlobalFlags validates the flags every command shares. It is Root's
