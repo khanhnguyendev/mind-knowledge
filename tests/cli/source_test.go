@@ -161,6 +161,29 @@ func TestSourceAddForceAllowsDuplicate(t *testing.T) {
 // TestSourceListEmptyIsNotNull asserts on raw stdout text: json.Unmarshal
 // treats "null" and "[]" identically, so a test that decodes into a slice
 // cannot tell an empty list apart from a bug that emits null.
+// TestSourceAddTwoDifferentAssetsNotFlaggedAsDuplicate guards the
+// body != "" half of the duplicate-check condition in cmd/source.go. Every
+// asset-only source has an empty body, so they all hash to sha256(""); the
+// only thing stopping the second one from being rejected as a bogus
+// duplicate is that the pre-check is skipped whenever body is empty.
+func TestSourceAddTwoDifferentAssetsNotFlaggedAsDuplicate(t *testing.T) {
+	db := newDB(t)
+
+	pathA := filepath.Join(t.TempDir(), "a.png")
+	pathB := filepath.Join(t.TempDir(), "b.png")
+
+	first := mk(t, db, "source", "add", "--title", "A", "--asset", pathA)
+	requireCode(t, first, 0)
+	second := mk(t, db, "source", "add", "--title", "B", "--asset", pathB)
+	requireCode(t, second, 0)
+
+	idA := strings.TrimSpace(first.stdout)
+	idB := strings.TrimSpace(second.stdout)
+	if idA == "" || idB == "" || idA == idB {
+		t.Errorf("ids = %q, %q, want two distinct non-empty ids", idA, idB)
+	}
+}
+
 func TestSourceListEmptyIsNotNull(t *testing.T) {
 	db := newDB(t)
 
