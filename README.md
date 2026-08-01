@@ -43,6 +43,36 @@ flag list, including each subcommand's own flags (for example
 
 `--limit 0` means unlimited; a negative value is rejected (exit `2`).
 
+### Per-entity cheat sheet
+
+The verbs are not uniform across entities. This table is the fastest way
+to check before guessing.
+
+| Entity | Create | Change status | `-p` on its `ls` |
+|---|---|---|---|
+| project | `add` | `edit --status` | **ignored** — returns every project |
+| epic | `create` | `mv --to` | scopes |
+| story | `create` | `mv --to` | scopes |
+| wiki | `add` | `edit --status` | scopes |
+| source | `add` | *immutable — no status, no edit* | rejected (exit `2`) |
+| link | `add` | *no status* | rejected (exit `2`) |
+| tag | `add` | *no status* | rejected (exit `2`) |
+| log | `add` | *append-only — no status* | scopes |
+
+Four things in that table are easy to misremember:
+
+- **`epic` and `story` use `create`; everything else uses `add`.** They
+  are also the two most frequently used.
+- **`epic` and `story` change status with `mv --to`; `project` and `wiki`
+  use `edit --status`.** `mk story edit <id> --status done` fails with
+  `unknown flag: --status`.
+- **`mk project ls -p <p>` silently lists every project.** It is the one
+  place where `-p` is both accepted and meaningless in a way that can
+  mislead. Use `mk project view <p>` for a single project.
+- **`link` and `tag` address their endpoints as `kind:reference`** — for
+  example `wiki:auth-model` or `story:b4g3l2`. Every other command takes
+  a bare id, name, or slug.
+
 ## The contract skills depend on
 
 - Every read command supports `--json`.
