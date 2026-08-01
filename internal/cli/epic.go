@@ -17,7 +17,7 @@ func init() {
 	}
 
 	// create
-	var createProject, createTitle, createDesc string
+	var createTitle, createDesc string
 	createCmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create an epic under a project",
@@ -28,12 +28,9 @@ func init() {
 			}
 			defer s.Close()
 
-			project := createProject
+			project := ProjectFlag()
 			if project == "" {
-				project = ProjectFlag()
-			}
-			if project == "" {
-				return invalidf("a project is required; pass --project on the command or -p globally")
+				return invalidf("a project is required; pass -p/--project")
 			}
 
 			e, err := s.CreateEpic(project, createTitle, createDesc)
@@ -43,7 +40,6 @@ func init() {
 			return emitCreated(e, e.ID)
 		},
 	}
-	createCmd.Flags().StringVar(&createProject, "project", "", "project id or name")
 	createCmd.Flags().StringVar(&createTitle, "title", "", "epic title (required)")
 	createCmd.Flags().StringVarP(&createDesc, "description", "d", "", "epic description")
 	createCmd.MarkFlagRequired("title")
@@ -105,7 +101,7 @@ func init() {
 	}
 
 	// edit
-	var editTitle, editDesc, editProject string
+	var editTitle, editDesc string
 	editCmd := &cobra.Command{
 		Use:   "edit <id>",
 		Short: "Change epic fields",
@@ -125,7 +121,8 @@ func init() {
 				f.Description = &editDesc
 			}
 			if cmd.Flags().Changed("project") {
-				f.ProjectID = &editProject
+				project := ProjectFlag()
+				f.ProjectID = &project
 			}
 
 			e, err := s.UpdateEpic(args[0], f)
@@ -137,7 +134,6 @@ func init() {
 	}
 	editCmd.Flags().StringVar(&editTitle, "title", "", "new title")
 	editCmd.Flags().StringVarP(&editDesc, "description", "d", "", "new description")
-	editCmd.Flags().StringVar(&editProject, "project", "", "move to another project")
 
 	// mv
 	var mvTo string

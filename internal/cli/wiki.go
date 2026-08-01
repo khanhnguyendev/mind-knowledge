@@ -20,7 +20,7 @@ var wikiCmd = &cobra.Command{
 
 func init() {
 	// add
-	var addSlug, addTitle, addKind, addSummary, addBody, addProject string
+	var addSlug, addTitle, addKind, addSummary, addBody string
 	addCmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add a wiki page",
@@ -31,12 +31,7 @@ func init() {
 			}
 			defer s.Close()
 
-			project := addProject
-			if project == "" {
-				project = ProjectFlag()
-			}
-
-			p, err := s.CreateWikiPage(addSlug, addTitle, addKind, addSummary, addBody, project)
+			p, err := s.CreateWikiPage(addSlug, addTitle, addKind, addSummary, addBody, ProjectFlag())
 			if err != nil {
 				return err
 			}
@@ -49,8 +44,6 @@ func init() {
 		"summary, concept, entity, decision, spec, synthesis, or comparison")
 	addCmd.Flags().StringVar(&addSummary, "summary", "", "one-line summary shown in the index")
 	addCmd.Flags().StringVar(&addBody, "body", "", "page body in markdown")
-	addCmd.Flags().StringVar(&addProject, "project", "",
-		"scope the page to a project (default: cross-project)")
 	addCmd.MarkFlagRequired("title")
 
 	// ls
@@ -117,7 +110,7 @@ func init() {
 	}
 
 	// edit
-	var editSlug, editTitle, editKind, editSummary, editBody, editStatus, editProject string
+	var editSlug, editTitle, editKind, editSummary, editBody, editStatus string
 	editCmd := &cobra.Command{
 		Use:   "edit <id-or-slug>",
 		Short: "Change a wiki page",
@@ -149,7 +142,8 @@ func init() {
 				f.Status = &editStatus
 			}
 			if cmd.Flags().Changed("project") {
-				f.ProjectID = &editProject
+				project := ProjectFlag()
+				f.ProjectID = &project
 			}
 
 			p, err := s.UpdateWikiPage(args[0], f)
@@ -166,8 +160,6 @@ func init() {
 	editCmd.Flags().StringVar(&editBody, "body", "", "new body")
 	editCmd.Flags().StringVar(&editStatus, "status", "",
 		"new status: current, stale, or superseded")
-	editCmd.Flags().StringVar(&editProject, "project", "",
-		"scope to a project, or empty to make it cross-project")
 
 	// rm
 	rmCmd := &cobra.Command{

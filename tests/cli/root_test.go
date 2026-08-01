@@ -36,3 +36,29 @@ func TestUnknownCommandJSONErrorEnvelope(t *testing.T) {
 		t.Error("error.message is empty")
 	}
 }
+
+// TestProjectShorthandWorksOnCommandsWithLocalProjectFlag guards against a
+// name collision: a subcommand that registers its own "--project" flag
+// (same long name as the persistent --project/-p) causes cobra to skip
+// merging the persistent flag entirely for that subcommand — including its
+// -p shorthand. epic create, epic edit, wiki add, wiki edit, and log add
+// all used to fall into this trap; they must read the persistent flag
+// instead of declaring their own.
+func TestProjectShorthandWorksOnCommandsWithLocalProjectFlag(t *testing.T) {
+	db := newDB(t)
+	pid := seedProject(t, db)
+
+	createRes := mk(t, db, "epic", "create", "-p", pid, "--title", "Auth overhaul")
+	requireCode(t, createRes, 0)
+	eid := strings.TrimSpace(createRes.stdout)
+
+	requireCode(t, mk(t, db, "epic", "edit", eid, "-p", pid), 0)
+
+	requireCode(t, mk(t, db, "wiki", "add",
+		"-p", pid, "--title", "Scoped Page", "--body", "b"), 0)
+
+	requireCode(t, mk(t, db, "wiki", "edit", "scoped-page", "-p", pid), 0)
+
+	requireCode(t, mk(t, db, "log", "add",
+		"-p", pid, "--kind", "ingest", "--summary", "shorthand works"), 0)
+}

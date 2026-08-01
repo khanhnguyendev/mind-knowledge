@@ -44,22 +44,23 @@ Global flags (available on every command): `--json`, `--plain`,
 ## The contract skills depend on
 
 - Every read command supports `--json`.
-- `project add`, `epic create`, `story create`, `wiki add`, and
-  `source add` print the new id, bare, on stdout in plain mode, and the
-  full created record under `--json` (the id is its `.id` field).
-  Chaining ids into shell variables, as below, means invoking the
-  command *without* `--json`.
-- `log add` creates a standalone entity with its own numeric id too, but
-  it does not follow the pattern above: in plain mode it prints
-  *nothing* on success. Only `--json` exposes the id, as `.id` on the
-  printed entry. Don't rely on capturing `mk log add`'s stdout in plain
-  mode.
+- Every command that creates a standalone entity — `project add`,
+  `epic create`, `story create`, `wiki add`, `source add`, `log add` —
+  prints the new id, bare, on stdout in plain mode, and the full created
+  record under `--json` (the id is its `.id` field). Chaining ids into
+  shell variables, as below, means invoking the command *without*
+  `--json`.
 - `link add` and `tag add` create associations, not standalone entities,
   so there is no id to print at all: a link is keyed by its
   (from, to, relation) tuple and a tag by (name, entity). `link add`
   prints nothing in plain mode and the created edge (no `id` field)
   under `--json`; `tag add` prints nothing in either mode. Exit code `0`
   is the success signal for both.
+- `-p`/`--project` works everywhere, including on the commands that also
+  read it as a value to assign rather than a read-time filter:
+  `epic create`, `epic edit --project <p>` (moves the epic),
+  `wiki add`, `wiki edit --project <p>` (reassigns the page; pass an
+  empty string to make it cross-project again), and `log add`.
 - Exit codes: `0` ok, `1` not found, `2` bad input, `3` database problem.
 - With `--json`, errors arrive on **stdout** (not stderr) as
   `{"error":{"code":2,"message":"..."}}`.
@@ -114,9 +115,11 @@ changes nothing. Each project's `state` is one of:
 
 ## `mk doctor`
 
-Reports drift and repairs nothing. It always exits `0`; findings are
-information for a skill to act on, not a process failure. Each finding
-carries a `check` name:
+Reports drift and repairs nothing. It always exits `0` when it runs
+successfully — a nonzero findings count is not a process failure
+(an unknown `--scope` value, or any other bad-input case, still exits
+`2` as usual). Findings are information for a skill to act on. Each
+finding carries a `check` name:
 
 | Check | Scope | Meaning |
 |---|---|---|

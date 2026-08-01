@@ -18,7 +18,7 @@ func init() {
 	}
 
 	// add
-	var addKind, addProject, addRef, addSummary string
+	var addKind, addRef, addSummary string
 	addCmd := &cobra.Command{
 		Use:   "add",
 		Short: "Append a log entry",
@@ -29,24 +29,15 @@ func init() {
 			}
 			defer s.Close()
 
-			project := addProject
-			if project == "" {
-				project = ProjectFlag()
-			}
-
-			entry, err := s.AddLog(addKind, project, addRef, addSummary)
+			entry, err := s.AddLog(addKind, ProjectFlag(), addRef, addSummary)
 			if err != nil {
 				return err
 			}
-			if JSONMode() {
-				return render.JSON(os.Stdout, entry)
-			}
-			return nil
+			return emitCreated(entry, fmt.Sprintf("%d", entry.ID))
 		},
 	}
 	addCmd.Flags().StringVar(&addKind, "kind", "",
 		"what happened: init, brainstorm, ingest, query, lint, move, done (required)")
-	addCmd.Flags().StringVar(&addProject, "project", "", "project this concerns")
 	addCmd.Flags().StringVar(&addRef, "ref", "", "id of the entity touched")
 	addCmd.Flags().StringVar(&addSummary, "summary", "", "one line describing it (required)")
 	addCmd.MarkFlagRequired("kind")

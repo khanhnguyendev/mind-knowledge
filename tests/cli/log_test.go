@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -120,6 +121,31 @@ func TestLogAddAndListProjectSymmetry(t *testing.T) {
 	// ls with unknown project should also exit 1
 	lsRes := mk(t, db, "log", "ls", "--project", "nope99")
 	requireCode(t, lsRes, 1)
+}
+
+func TestLogAddPrintsIDInPlainMode(t *testing.T) {
+	db := newDB(t)
+
+	r := mk(t, db, "log", "add", "--kind", "ingest", "--summary", "check the id")
+	requireCode(t, r, 0)
+
+	id := strings.TrimSpace(r.stdout)
+	if id == "" {
+		t.Fatal("log add printed nothing in plain mode; want the new entry's id")
+	}
+
+	// The id round-trips: log ls --json's first entry (newest first) must
+	// carry the same id log add just printed.
+	lsRes := mk(t, db, "--json", "log", "ls")
+	requireCode(t, lsRes, 0)
+
+	var entries []struct {
+		ID int64 `json:"id"`
+	}
+	decode(t, lsRes, &entries)
+	if len(entries) != 1 || id != strconv.FormatInt(entries[0].ID, 10) {
+		t.Errorf("log add printed id %q, log ls reports %+v", id, entries)
+	}
 }
 
 func TestLogAddAllowsOptionalProjectAndRef(t *testing.T) {
