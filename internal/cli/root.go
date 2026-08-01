@@ -39,16 +39,27 @@ func init() {
 	f.StringVar(&flagDB, "db", "", "database path (default $MK_DB or ~/.mind-knowledge/mk.db)")
 
 	// Root has no work of its own: no args prints help, and any
-	// unrecognized positional arg is an invalid-input error. Cobra only
-	// generates its own "unknown command" error once subcommands exist
-	// (see legacyArgs in cobra's args.go), so with no subcommands
-	// registered yet this is what turns "mk nonesuch" into exit code 2
-	// instead of a silent, successful help print.
-	Root.RunE = func(cmd *cobra.Command, args []string) error {
+	// unrecognized positional arg is an invalid-input error.
+	//
+	// Root.Args must be set explicitly. Cobra's Command.Find special-cases
+	// a nil Args on whichever command it resolves to: once that command
+	// has subcommands (true for Root from the moment the first entity
+	// registers one), Find raises "unknown command" itself, straight out
+	// of command resolution and before persistent flags have been parsed
+	// at all. Left alone, that would make e.g. `mk --json nonesuch`
+	// report its error as plain text instead of a JSON envelope, since
+	// flagJSON is still at its zero value when the error is produced.
+	// Giving Root a non-nil Args routes the same check through the
+	// normal execute() path instead, which parses flags first and only
+	// then validates args.
+	Root.Args = func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
-			return cmd.Help()
+			return nil
 		}
 		return fmt.Errorf("%w: unknown command %q for %q", store.ErrInvalid, args[0], cmd.CommandPath())
+	}
+	Root.RunE = func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
 	}
 }
 
