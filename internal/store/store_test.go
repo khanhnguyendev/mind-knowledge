@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -50,6 +51,41 @@ func TestOpenIsIdempotent(t *testing.T) {
 	}
 	if version != 2 {
 		t.Errorf("schema version = %d, want 2", version)
+	}
+}
+
+// TestConcurrentOpenOfAFreshDatabaseAllSucceed pins the case a
+// parallel-subagent harness hits on its very first run: several mk
+// invocations racing to create the same database. Unserialized, they all
+// read schema version 0 and all try to apply 0001_init.sql, and every
+// loser reports either SQLITE_BUSY or "table projects already exists".
+func TestConcurrentOpenOfAFreshDatabaseAllSucceed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fresh.db")
+
+	const openers = 8
+	errs := make([]error, openers)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	for i := 0; i < openers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // release them together, to maximize the collision
+			s, err := Open(path)
+			errs[i] = err
+			if err == nil {
+				s.Close()
+			}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("concurrent Open %d failed: %v", i, err)
+		}
 	}
 }
 
