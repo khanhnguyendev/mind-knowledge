@@ -76,22 +76,29 @@ func checkWiki(s *store.Store) ([]Finding, error) {
 
 	// Build the link maps once, from links, so wiki.uncited and
 	// wiki.unprocessed — which reason about the same derived-from edges
-	// from opposite ends (the wiki page side and the source side) — can
-	// never quietly disagree about which edges exist.
+	// from opposite ends (the wiki page side and the source side) — read
+	// off exactly one condition (derived-from, wiki -> source) instead of
+	// two independently written ones that could drift apart.
 	inbound := map[string]bool{}
 	derivedFrom := map[string]bool{}
 	supersededPages := map[string]bool{}
 	citedSources := map[string]bool{}
 
 	for _, l := range links {
-		if l.ToKind == "wiki" {
+		// A link from a page to itself is not an inbound link from
+		// anything else, so it must not count toward "has inbound
+		// links."
+		if l.ToKind == "wiki" && !(l.FromKind == "wiki" && l.FromID == l.ToID) {
 			inbound[l.ToID] = true
 		}
-		if l.Relation == "derived-from" && l.FromKind == "wiki" {
+		// Only a derived-from edge that actually terminates at a source
+		// counts as citing a source. A derived-from edge to another wiki
+		// page cites no source at all, so derivedFrom and citedSources
+		// must be set together, from the same condition, or the two
+		// checks below can disagree about what "cited" means.
+		if l.Relation == "derived-from" && l.FromKind == "wiki" && l.ToKind == "source" {
 			derivedFrom[l.FromID] = true
-			if l.ToKind == "source" {
-				citedSources[l.ToID] = true
-			}
+			citedSources[l.ToID] = true
 		}
 		if l.Relation == "supersedes" && l.ToKind == "wiki" {
 			supersededPages[l.ToID] = true

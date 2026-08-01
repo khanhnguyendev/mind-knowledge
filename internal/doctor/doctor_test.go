@@ -330,3 +330,68 @@ func TestStoryStrandedRespectsOverriddenThreshold(t *testing.T) {
 		t.Errorf("story not flagged after lowering StrandedAfterDays: %+v", findings)
 	}
 }
+
+func TestWikiOrphansSelfLinkStillFlagsOrphan(t *testing.T) {
+	s := testStore(t)
+
+	// A page's only inbound edge is a link from itself to itself. That is
+	// not an inbound link from anything else, so the page is still an
+	// orphan in every sense the check cares about.
+	page, _ := s.CreateWikiPage("", "Self Referential", "concept", "", "b", "")
+	s.AddLink("wiki", page.ID, "wiki", page.ID, "references")
+
+	findings, err := Run(s, []string{"wiki"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !hasCheck(findings, "wiki.orphans", page.ID) {
+		t.Errorf("page whose only inbound edge is a self-link not flagged orphan: %+v", findings)
+	}
+}
+
+func TestWikiUncitedFlagsPageDerivedFromAnotherWikiPage(t *testing.T) {
+	s := testStore(t)
+
+	// A derived-from edge whose target is another wiki page, not a
+	// source, cites no source at all. wiki.uncited must not treat that
+	// edge as satisfying "this page cites a source."
+	other, _ := s.CreateWikiPage("", "Other", "concept", "", "b", "")
+	page, _ := s.CreateWikiPage("", "Derived From Wiki", "summary", "", "b", "")
+	s.AddLink("wiki", page.ID, "wiki", other.ID, "derived-from")
+
+	findings, _ := Run(s, []string{"wiki"})
+	if !hasCheck(findings, "wiki.uncited", page.ID) {
+		t.Errorf(
+			"page derived-from another wiki page (not a source) not flagged uncited: %+v",
+			findings)
+	}
+}
+
+func TestWikiStaleDoesNotFlagCurrentPageWithNoSupersession(t *testing.T) {
+	s := testStore(t)
+
+	current, _ := s.CreateWikiPage("", "Current", "concept", "", "b", "")
+
+	findings, _ := Run(s, []string{"wiki"})
+	if hasCheck(findings, "wiki.stale", current.ID) {
+		t.Errorf("current page with no supersession edge wrongly flagged stale: %+v", findings)
+	}
+}
+
+func TestWikiStaleDoesNotReflagAlreadySupersededPage(t *testing.T) {
+	s := testStore(t)
+
+	old, _ := s.CreateWikiPage("", "Old", "concept", "", "b", "")
+	replacement, _ := s.CreateWikiPage("", "New", "concept", "", "b", "")
+	s.AddLink("wiki", replacement.ID, "wiki", old.ID, "supersedes")
+
+	superseded := "superseded"
+	if _, err := s.UpdateWikiPage(old.ID, store.WikiFields{Status: &superseded}); err != nil {
+		t.Fatalf("UpdateWikiPage: %v", err)
+	}
+
+	findings, _ := Run(s, []string{"wiki"})
+	if hasCheck(findings, "wiki.stale", old.ID) {
+		t.Errorf("already-superseded page wrongly re-flagged as stale: %+v", findings)
+	}
+}
