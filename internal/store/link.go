@@ -1,7 +1,9 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/khanhnguyendev/mind-knowledge/internal/model"
 )
@@ -142,6 +144,145 @@ func (s *Store) ListLinks(fromKind, fromID, toKind, toID, relation string) ([]mo
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("%w: listing links: %v", ErrDB, err)
+	}
+	return out, nil
+}
+
+// deleteEntityRefs removes every links row and entity_tags row naming any
+// of ids under kind, on either end of the edge.
+//
+// links and entity_tags deliberately carry no foreign key to the entity
+// they point at: their endpoints span five different tables, so no single
+// REFERENCES clause could express the constraint. That makes cleanup this
+// function's job, and it runs inside the caller's transaction so an entity
+// and its references always disappear together. Skipping it leaves an edge
+// that permanently vouches for the endpoint that survived — which silently
+// disables wiki.orphans, wiki.uncited, and wiki.unprocessed for it.
+func deleteEntityRefs(tx *sql.Tx, kind string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, kind)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+
+	for _, stmt := range []string{
+		`DELETE FROM links WHERE from_kind = ? AND from_id IN (` + placeholders + `)`,
+		`DELETE FROM links WHERE to_kind = ? AND to_id IN (` + placeholders + `)`,
+		`DELETE FROM entity_tags WHERE entity_kind = ? AND entity_id IN (` + placeholders + `)`,
+	} {
+		if _, err := tx.Exec(stmt, args...); err != nil {
+			return fmt.Errorf("%w: cleaning %s references: %v", ErrDB, kind, err)
+		}
+	}
+	return nil
+}
+
+// deleteEntity removes one row from table together with every links and
+// entity_tags row naming it, in a single transaction so a partial delete
+// cannot leave the graph inconsistent.
+func (s *Store) deleteEntity(kind, table, id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("%w: deleting %s: %v", ErrDB, kind, err)
+	}
+	defer tx.Rollback()
+
+	if err := deleteEntityRefs(tx, kind, []string{id}); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, table), id); err != nil {
+		return fmt.Errorf("%w: deleting %s: %v", ErrDB, kind, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("%w: deleting %s: %v", ErrDB, kind, err)
+	}
+	return nil
+}
+
+// txIDs collects the single-column ids a query returns, inside tx.
+func txIDs(tx *sql.Tx, query string, args ...any) ([]string, error) {
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%w: collecting ids: %v", ErrDB, err)
+	}
+	defer rows.Close()
+
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("%w: reading id: %v", ErrDB, err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%w: collecting ids: %v", ErrDB, err)
+	}
+	return out, nil
+}
+
+// entityTables maps an entity kind to the table that owns its ids.
+var entityTables = map[string]string{
+	"project": "projects",
+	"epic":    "epics",
+	"story":   "stories",
+	"source":  "sources",
+	"wiki":    "wiki_pages",
+}
+
+// idSet reads every id in a table.
+func (s *Store) idSet(table string) (map[string]bool, error) {
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT id FROM %s`, table))
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading ids from %s: %v", ErrDB, table, err)
+	}
+	defer rows.Close()
+
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("%w: reading id from %s: %v", ErrDB, table, err)
+		}
+		out[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%w: reading ids from %s: %v", ErrDB, table, err)
+	}
+	return out, nil
+}
+
+// DanglingLinks returns edges at least one of whose endpoints no longer
+// names an existing entity. links carries no foreign keys — the endpoints
+// span five tables, so no single constraint could express it — which means
+// a database written by a binary that did not clean up after itself can
+// still hold edges vouching for entities that are gone. An edge naming a
+// kind that is not an entity kind at all counts as dangling too, since
+// nothing could ever resolve it.
+func (s *Store) DanglingLinks() ([]model.Link, error) {
+	links, err := s.ListLinks("", "", "", "", "")
+	if err != nil {
+		return nil, err
+	}
+
+	known := make(map[string]map[string]bool, len(entityTables))
+	for kind, table := range entityTables {
+		ids, err := s.idSet(table)
+		if err != nil {
+			return nil, err
+		}
+		known[kind] = ids
+	}
+
+	out := []model.Link{}
+	for _, l := range links {
+		if !known[l.FromKind][l.FromID] || !known[l.ToKind][l.ToID] {
+			out = append(out, l)
+		}
 	}
 	return out, nil
 }

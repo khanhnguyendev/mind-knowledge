@@ -77,6 +77,14 @@ func (s *Store) CreateStory(epicID, title, description string) (*model.Story, er
 		 VALUES (?, ?, ?, ?, 'backlog', 'med', ?, '', '', '', ?, ?)`,
 		id, epic.ID, title, description, pos, now, now)
 	if err != nil {
+		// The only unique constraint on stories is its primary key, so
+		// this is an id collision — bad input (2), exactly as
+		// CreateProject and CreateWikiPage already classify it. Returning
+		// raw ErrDB here made the same condition exit 3 on some commands
+		// and 2 on others.
+		if isUniqueViolation(err) {
+			return nil, fmt.Errorf("%w: story id %q is already taken", ErrInvalid, id)
+		}
 		return nil, fmt.Errorf("%w: inserting story: %v", ErrDB, err)
 	}
 	return s.GetStory(id)
@@ -250,14 +258,11 @@ func (s *Store) UpdateStory(id string, f StoryFields) (*model.Story, error) {
 	return s.GetStory(current.ID)
 }
 
-// DeleteStory removes a story.
+// DeleteStory removes a story together with its links and tags.
 func (s *Store) DeleteStory(id string) error {
 	st, err := s.GetStory(id)
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM stories WHERE id = ?`, st.ID); err != nil {
-		return fmt.Errorf("%w: deleting story: %v", ErrDB, err)
-	}
-	return nil
+	return s.deleteEntity("story", "stories", st.ID)
 }

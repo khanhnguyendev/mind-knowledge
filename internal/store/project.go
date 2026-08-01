@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"modernc.org/sqlite"
-
 	"github.com/khanhnguyendev/mind-knowledge/internal/model"
 )
 
@@ -20,29 +18,6 @@ type ProjectFields struct {
 }
 
 const projectColumns = `id, name, repo_path, git_remote, status, created_at, updated_at`
-
-// SQLite extended result codes for constraint violations. Hardcoded here
-// rather than importing modernc.org/sqlite/lib, so this file's dependency
-// surface stays at the two packages the project allows.
-const (
-	sqliteConstraintUnique     = 2067 // SQLITE_CONSTRAINT_UNIQUE
-	sqliteConstraintPrimaryKey = 1555 // SQLITE_CONSTRAINT_PRIMARYKEY
-)
-
-// isUniqueViolation reports whether err came from a UNIQUE or PRIMARY KEY
-// constraint failure at the database layer.
-func isUniqueViolation(err error) bool {
-	var sqliteErr *sqlite.Error
-	if !errors.As(err, &sqliteErr) {
-		return false
-	}
-	switch sqliteErr.Code() {
-	case sqliteConstraintUnique, sqliteConstraintPrimaryKey:
-		return true
-	default:
-		return false
-	}
-}
 
 func scanProject(row interface{ Scan(...any) error }) (*model.Project, error) {
 	var p model.Project
@@ -208,13 +183,46 @@ func (s *Store) UpdateProject(id string, f ProjectFields) (*model.Project, error
 	return s.GetProject(current.ID)
 }
 
-// DeleteProject removes a project. Its epics and stories cascade away.
+// DeleteProject removes a project. Its epics and stories cascade away in
+// the database, so their links and tags are collected and cleaned here
+// before the delete — otherwise the leak this guards against simply
+// reappears one and two levels down.
 func (s *Store) DeleteProject(id string) error {
 	p, err := s.GetProject(id)
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM projects WHERE id = ?`, p.ID); err != nil {
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("%w: deleting project: %v", ErrDB, err)
+	}
+	defer tx.Rollback()
+
+	epicIDs, err := txIDs(tx, `SELECT id FROM epics WHERE project_id = ?`, p.ID)
+	if err != nil {
+		return err
+	}
+	storyIDs, err := txIDs(tx,
+		`SELECT s.id FROM stories s JOIN epics e ON e.id = s.epic_id
+		 WHERE e.project_id = ?`, p.ID)
+	if err != nil {
+		return err
+	}
+
+	if err := deleteEntityRefs(tx, "story", storyIDs); err != nil {
+		return err
+	}
+	if err := deleteEntityRefs(tx, "epic", epicIDs); err != nil {
+		return err
+	}
+	if err := deleteEntityRefs(tx, "project", []string{p.ID}); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, p.ID); err != nil {
+		return fmt.Errorf("%w: deleting project: %v", ErrDB, err)
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%w: deleting project: %v", ErrDB, err)
 	}
 	return nil

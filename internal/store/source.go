@@ -64,6 +64,14 @@ func (s *Store) CreateSource(uri, title, kind, body, assetPath string) (*model.S
 		`INSERT INTO sources (`+sourceColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, uri, title, kind, body, assetPath, hashBody(body), timestamp())
 	if err != nil {
+		// The only unique constraint on sources is its primary key, so
+		// this is an id collision — bad input (2), exactly as
+		// CreateProject and CreateWikiPage already classify it. Returning
+		// raw ErrDB here made the same condition exit 3 on some commands
+		// and 2 on others.
+		if isUniqueViolation(err) {
+			return nil, fmt.Errorf("%w: source id %q is already taken", ErrInvalid, id)
+		}
 		return nil, fmt.Errorf("%w: inserting source: %v", ErrDB, err)
 	}
 	return s.GetSource(id)
@@ -129,14 +137,11 @@ func (s *Store) ListSources(kind string, limit int) ([]model.Source, error) {
 	return out, nil
 }
 
-// DeleteSource removes a source.
+// DeleteSource removes a source together with its links and tags.
 func (s *Store) DeleteSource(id string) error {
 	src, err := s.GetSource(id)
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM sources WHERE id = ?`, src.ID); err != nil {
-		return fmt.Errorf("%w: deleting source: %v", ErrDB, err)
-	}
-	return nil
+	return s.deleteEntity("source", "sources", src.ID)
 }

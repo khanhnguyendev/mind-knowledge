@@ -72,6 +72,14 @@ func (s *Store) CreateEpic(projectID, title, description string) (*model.Epic, e
 		 VALUES (?, ?, ?, ?, 'backlog', ?, ?, ?)`,
 		id, project.ID, title, description, pos, now, now)
 	if err != nil {
+		// The only unique constraint on epics is its primary key, so
+		// this is an id collision — bad input (2), exactly as
+		// CreateProject and CreateWikiPage already classify it. Returning
+		// raw ErrDB here made the same condition exit 3 on some commands
+		// and 2 on others.
+		if isUniqueViolation(err) {
+			return nil, fmt.Errorf("%w: epic id %q is already taken", ErrInvalid, id)
+		}
 		return nil, fmt.Errorf("%w: inserting epic: %v", ErrDB, err)
 	}
 	return s.GetEpic(id)
@@ -189,13 +197,34 @@ func (s *Store) UpdateEpic(id string, f EpicFields) (*model.Epic, error) {
 	return s.GetEpic(current.ID)
 }
 
-// DeleteEpic removes an epic; its stories cascade away.
+// DeleteEpic removes an epic; its stories cascade away in the database, so
+// their links and tags are collected and cleaned here before the delete.
 func (s *Store) DeleteEpic(id string) error {
 	e, err := s.GetEpic(id)
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM epics WHERE id = ?`, e.ID); err != nil {
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("%w: deleting epic: %v", ErrDB, err)
+	}
+	defer tx.Rollback()
+
+	storyIDs, err := txIDs(tx, `SELECT id FROM stories WHERE epic_id = ?`, e.ID)
+	if err != nil {
+		return err
+	}
+	if err := deleteEntityRefs(tx, "story", storyIDs); err != nil {
+		return err
+	}
+	if err := deleteEntityRefs(tx, "epic", []string{e.ID}); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM epics WHERE id = ?`, e.ID); err != nil {
+		return fmt.Errorf("%w: deleting epic: %v", ErrDB, err)
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%w: deleting epic: %v", ErrDB, err)
 	}
 	return nil

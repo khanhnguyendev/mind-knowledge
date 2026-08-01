@@ -250,14 +250,11 @@ func (s *Store) UpdateWikiPage(idOrSlug string, f WikiFields) (*model.WikiPage, 
 	return s.GetWikiPage(current.ID)
 }
 
-// DeleteWikiPage removes a page.
+// DeleteWikiPage removes a page together with its links and tags.
 func (s *Store) DeleteWikiPage(idOrSlug string) error {
 	p, err := s.GetWikiPage(idOrSlug)
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`DELETE FROM wiki_pages WHERE id = ?`, p.ID); err != nil {
-		return fmt.Errorf("%w: deleting wiki page: %v", ErrDB, err)
-	}
-	return nil
+	return s.deleteEntity("wiki", "wiki_pages", p.ID)
 }
