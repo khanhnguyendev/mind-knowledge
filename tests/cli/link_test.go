@@ -108,3 +108,26 @@ func TestLinkRemove(t *testing.T) {
 	requireCode(t, mk(t, db, "link", "rm",
 		"--from", "wiki:a", "--to", "wiki:b", "--relation", "references"), 1)
 }
+
+// TestLinkRemoveRejectsUnknownRelation distinguishes bad input from a
+// missing edge: a typo'd --relation can never have matched a stored row,
+// but that must not read as a successful "already gone" no-op.
+func TestLinkRemoveRejectsUnknownRelation(t *testing.T) {
+	db := newDB(t)
+
+	mk(t, db, "wiki", "add", "--title", "A", "--body", "b")
+	mk(t, db, "wiki", "add", "--title", "B", "--body", "b")
+
+	r := mk(t, db, "link", "rm", "--from", "wiki:a", "--to", "wiki:b", "--relation", "cites")
+	requireCode(t, r, 2)
+}
+
+func TestLinkRemoveMissingEndpointExitsOne(t *testing.T) {
+	db := newDB(t)
+
+	mk(t, db, "wiki", "add", "--title", "A", "--body", "b")
+
+	r := mk(t, db, "link", "rm", "--from", "wiki:a", "--to", "source:nope99",
+		"--relation", "references")
+	requireCode(t, r, 1)
+}

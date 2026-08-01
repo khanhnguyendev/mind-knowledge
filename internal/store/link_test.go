@@ -116,3 +116,23 @@ func TestRemoveLink(t *testing.T) {
 		t.Errorf("removing a missing link err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestRemoveLinkRejectsUnknownRelation(t *testing.T) {
+	s := testStore(t)
+	a, _ := s.CreateWikiPage("", "A", "concept", "", "b", "")
+	b, _ := s.CreateWikiPage("", "B", "concept", "", "b", "")
+
+	err := s.RemoveLink("wiki", a.ID, "wiki", b.ID, "cites")
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("err = %v, want ErrInvalid (not ErrNotFound) for a bad relation", err)
+	}
+}
+
+func TestListLinksRejectsUnknownRelation(t *testing.T) {
+	s := testStore(t)
+
+	_, err := s.ListLinks("", "", "", "", "cites")
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("err = %v, want ErrInvalid", err)
+	}
+}

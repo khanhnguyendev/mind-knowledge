@@ -95,6 +95,12 @@ func (s *Store) AddLink(fromKind, fromID, toKind, toID, relation string) (*model
 
 // ListLinks returns edges matching every non-empty filter.
 func (s *Store) ListLinks(fromKind, fromID, toKind, toID, relation string) ([]model.Link, error) {
+	if relation != "" && !model.ValidRelation(relation) {
+		return nil, fmt.Errorf(
+			"%w: unknown relation %q (want derived-from, supersedes, references, or implements)",
+			ErrInvalid, relation)
+	}
+
 	query := `SELECT from_kind, from_id, to_kind, to_id, relation FROM links WHERE 1 = 1`
 	args := []any{}
 
@@ -142,6 +148,12 @@ func (s *Store) ListLinks(fromKind, fromID, toKind, toID, relation string) ([]mo
 
 // RemoveLink deletes one edge, reporting ErrNotFound when it was absent.
 func (s *Store) RemoveLink(fromKind, fromID, toKind, toID, relation string) error {
+	if !model.ValidRelation(relation) {
+		return fmt.Errorf(
+			"%w: unknown relation %q (want derived-from, supersedes, references, or implements)",
+			ErrInvalid, relation)
+	}
+
 	resolvedFrom, err := s.resolveEntity(fromKind, fromID)
 	if err != nil {
 		return err

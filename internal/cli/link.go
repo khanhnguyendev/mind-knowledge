@@ -152,7 +152,7 @@ func init() {
 }
 
 // parseEntityRef splits "wiki:auth-model" into its kind and reference.
-func parseEntityRef(ref string) (kind, id string, err error) {
+func parseEntityRef(ref string) (kind, entityRef string, err error) {
 	parts := strings.SplitN(ref, ":", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", invalidf(
