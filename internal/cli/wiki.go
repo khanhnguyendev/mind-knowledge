@@ -188,3 +188,36 @@ func init() {
 	wikiCmd.AddCommand(addCmd, lsCmd, viewCmd, editCmd, rmCmd)
 	Root.AddCommand(wikiCmd)
 }
+
+func init() {
+	var indexKind, indexStatus string
+
+	indexCmd := &cobra.Command{
+		Use:   "index",
+		Short: "Print the wiki catalog as markdown",
+		Long: "Renders the llm-wiki index: every page grouped by kind, each " +
+			"with its one-line summary. Read this before drilling into pages.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := OpenStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			pages, err := s.ListWikiPages(indexKind, indexStatus, ProjectFlag(), LimitFlag())
+			if err != nil {
+				return err
+			}
+			if JSONMode() {
+				return render.JSON(os.Stdout, pages)
+			}
+			render.WikiIndex(os.Stdout, pages)
+			return nil
+		},
+	}
+
+	indexCmd.Flags().StringVar(&indexKind, "kind", "", "restrict the index to one kind")
+	indexCmd.Flags().StringVar(&indexStatus, "status", "", "restrict the index to one status")
+
+	wikiCmd.AddCommand(indexCmd)
+}
