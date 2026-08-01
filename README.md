@@ -36,10 +36,12 @@ mk doctor   [--scope <s>]...
 mk sync
 ```
 
-Global flags (available on every command): `--json`, `--plain`,
-`--project/-p`, `--limit`, `--db`. Run `mk --help` or `mk <command>
---help` for the full flag list, including each subcommand's own flags
-(for example `mk source add --kind`).
+Global flags (available on every command): `--json`, `--project/-p`,
+`--limit`, `--db`. Run `mk --help` or `mk <command> --help` for the full
+flag list, including each subcommand's own flags (for example
+`mk source add --kind`).
+
+`--limit 0` means unlimited; a negative value is rejected (exit `2`).
 
 ## The contract skills depend on
 
@@ -56,17 +58,34 @@ Global flags (available on every command): `--json`, `--plain`,
   prints nothing in plain mode and the created edge (no `id` field)
   under `--json`; `tag add` prints nothing in either mode. Exit code `0`
   is the success signal for both.
-- `-p`/`--project` works everywhere, including on the commands that also
-  read it as a value to assign rather than a read-time filter:
-  `epic create`, `epic edit --project <p>` (moves the epic),
-  `wiki add`, `wiki edit --project <p>` (reassigns the page; pass an
-  empty string to make it cross-project again), and `log add`.
+- `-p`/`--project` is a **read-time scope**, and it is never silently
+  ignored. Every command either honours it or rejects it:
+
+  | Command | `-p` |
+  |---|---|
+  | `wiki ls`, `wiki index`, `epic ls`, `story ls`, `board`, `log ls`, `sync`, `doctor` | scopes the result |
+  | `epic create`, `wiki add`, `log add` | assigns the new record's project |
+  | `search`, `source *`, `tag *`, `link *` | **rejected (exit `2`)** |
+
+  The rejecting commands are the cross-project ones: sources carry no
+  project at all, and a tag or a link may join entities in different
+  projects. Accepting `-p` there and ignoring it would let a skill that
+  threads `-p` through every call believe it had scoped a result set that
+  is in fact machine-wide.
+- Reassigning an existing record's project is `--set-project`, not `-p`:
+  `epic edit <id> --set-project <p>` moves the epic, and
+  `wiki edit <id> --set-project <p>` reassigns the page (pass an empty
+  string to make it cross-project again). `-p` on `epic edit` and
+  `wiki edit` is accepted and changes nothing, so threading it through
+  every call cannot silently move records.
 - Exit codes: `0` ok, `1` not found, `2` bad input, `3` database problem.
 - With `--json`, errors arrive on **stdout** (not stderr) as
   `{"error":{"code":2,"message":"..."}}`.
 - Empty results are `[]`, never `null`.
-- `mk source add` never reaches the network. Pass `--body`, `--file`, or
-  pipe the text on stdin.
+- `mk source add` never reaches the network. Pass `--body`, `--file`,
+  `--asset`, or pipe the text on stdin. It reads stdin only when none of
+  `--body`, `--file`, and `--asset` was given, so it never blocks on an
+  inherited pipe.
 - `mk doctor` and `mk sync` always exit `0` when they run successfully —
   a nonzero findings count is not a process failure. Read the output
   (rows, or the JSON array) to see what they found.
@@ -96,7 +115,10 @@ mk log add --kind brainstorm --project "$PROJ" --summary "broke auth into 5 stor
 
 `mk log add --kind` is free text; the flag help suggests `init`,
 `brainstorm`, `ingest`, `query`, `lint`, `move`, `done` as a starting
-vocabulary, but the store does not reject other values.
+vocabulary, but the store does not reject other values. It is trimmed and
+lowercased on the way in and on the way out — the same treatment tag names
+get — so `--kind Done` and `--kind done` are one kind, and
+`log ls --kind done` finds both.
 
 ## `mk sync`
 
@@ -128,14 +150,31 @@ finding carries a `check` name:
 | `wiki.uncited` | wiki | a page cites no source |
 | `wiki.missing` | wiki | a `[[wikilink]]` points at a slug with no page |
 | `wiki.unprocessed` | wiki | a source has no page derived from it |
+| `wiki.dangling` | wiki | a link names an entity that no longer exists |
 | `story.planless` | stories | a story is `done` with no plan |
-| `story.stranded` | stories | a story has been `in-progress` for 14+ days |
+| `story.stranded` | stories | a story is `in-progress` and untouched for 14+ days |
 | `epic.empty` | stories | an epic has no stories |
 | `project.missing` | projects | a registered project's path no longer exists |
 | `project.unverifiable` | projects | a registered project's git state could not be checked (git did not run), so it is reported neither healthy nor missing |
 
 `--scope` is repeatable (`--scope wiki --scope projects`); omitting it
 runs every check.
+
+`-p`/`--project` restricts the report to one project's epics, stories,
+and wiki pages. Sources and links belong to no project, so
+`wiki.unprocessed` and `wiki.dangling` are always reported machine-wide.
+An unknown project exits `1`; an unknown `--scope` exits `2`.
+
+`wiki.missing` reports only the *target* of a wikilink, so
+`[[Auth Model|the auth page]]` reports `auth-model` — a slug a skill can
+go and create. Wikilinks with no usable target (`[[ ]]`, or a target
+containing brackets) are not reported at all, since no page could ever
+satisfy them.
+
+`wiki.dangling` covers databases written by an older `mk`, which left
+`links` rows behind when an endpoint was deleted. Current `mk` removes an
+entity's links and tags along with the entity, including those of the
+epics and stories a project delete cascades to.
 
 ## Development
 

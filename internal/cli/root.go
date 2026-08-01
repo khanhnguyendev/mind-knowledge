@@ -15,7 +15,6 @@ import (
 
 var (
 	flagJSON    bool
-	flagPlain   bool
 	flagProject string
 	flagLimit   int
 	flagDB      string
@@ -36,14 +35,17 @@ var Root = &cobra.Command{
 
 func init() {
 	f := Root.PersistentFlags()
+	// There is no --plain: plain text is simply what every command emits
+	// when --json is absent, so a flag asking for it would have no job.
 	f.BoolVar(&flagJSON, "json", false, "emit machine-readable JSON")
-	f.BoolVar(&flagPlain, "plain", false, "emit plain text without decoration")
 	f.StringVarP(&flagProject, "project", "p", "", "scope to a project by id or name")
 	f.IntVar(&flagLimit, "limit", 0, "maximum rows to return (0 means unlimited)")
 	f.StringVar(&flagDB, "db", "", "database path (default $MK_DB or ~/.mind-knowledge/mk.db)")
 
 	Root.Version = Version
 	Root.SetVersionTemplate("mk {{.Version}}\n")
+
+	Root.PersistentPreRunE = checkGlobalFlags
 
 	// Root has no work of its own: no args prints help, and any
 	// unrecognized positional arg is an invalid-input error.
@@ -67,6 +69,45 @@ func init() {
 	}
 	Root.RunE = func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
+	}
+}
+
+// checkGlobalFlags validates the flags every command shares. It is Root's
+// PersistentPreRunE; any command that needs its own must call it, because
+// cobra runs only the closest PersistentPreRunE it finds up the chain.
+func checkGlobalFlags(cmd *cobra.Command, args []string) error {
+	// A negative --limit used to mean "unlimited", silently: the SQL
+	// builders only append LIMIT when the value is positive. Nobody asks
+	// for -5 rows meaning to ask for all of them.
+	if flagLimit < 0 {
+		return invalidf("--limit must not be negative (0 means unlimited)")
+	}
+	return nil
+}
+
+// rejectProjectFlag fails when the caller explicitly passed -p/--project
+// to a command whose subject is cross-project by design.
+//
+// Silently ignoring it is the worse option: a skill threading -p through
+// every call would believe it had scoped a result set that is in fact
+// machine-wide, and act on another project's rows.
+func rejectProjectFlag(cmd *cobra.Command, subject string) error {
+	if !cmd.Flags().Changed("project") {
+		return nil
+	}
+	return invalidf(
+		"%s does not take -p/--project: %s are cross-project by design",
+		cmd.CommandPath(), subject)
+}
+
+// crossProjectPreRun builds the PersistentPreRunE for a command tree whose
+// entities belong to no project.
+func crossProjectPreRun(subject string) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := checkGlobalFlags(cmd, args); err != nil {
+			return err
+		}
+		return rejectProjectFlag(cmd, subject)
 	}
 }
 

@@ -17,7 +17,9 @@ func init() {
 		Use:   "source",
 		Short: "Capture and inspect raw sources",
 		Long: "Sources are immutable. mk never fetches over the network: " +
-			"pass --body, --file, or pipe the text on standard input.",
+			"pass --body, --file, --asset, or pipe the text on standard input.\n\n" +
+			"Sources are cross-project, so no source command takes -p/--project.",
+		PersistentPreRunE: crossProjectPreRun("sources"),
 	}
 
 	// add
@@ -25,9 +27,9 @@ func init() {
 	var addForce bool
 	addCmd := &cobra.Command{
 		Use:   "add",
-		Short: "Capture a source from --body, --file, or stdin",
+		Short: "Capture a source from --body, --file, --asset, or stdin",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := readSourceBody(cmd, addBody, addFile)
+			body, err := readSourceBody(addBody, addFile, addAsset)
 			if err != nil {
 				return err
 			}
@@ -156,7 +158,15 @@ func init() {
 
 // readSourceBody resolves content from --body, then --file, then stdin
 // when stdin is a pipe rather than a terminal.
-func readSourceBody(cmd *cobra.Command, body, file string) (string, error) {
+//
+// asset short-circuits the stdin read exactly as body and file do. An
+// asset-only source has its content on disk and wants no body, so falling
+// through to io.ReadAll(os.Stdin) would block until whoever holds the
+// other end of stdin closes it. The ModeCharDevice check does not save us:
+// an agent harness hands its child an inherited pipe that nobody is
+// writing to and nobody will close, which is a pipe by every test we can
+// make and never yields a byte. mk would hang forever, silently.
+func readSourceBody(body, file, asset string) (string, error) {
 	if body != "" {
 		return body, nil
 	}
@@ -167,10 +177,16 @@ func readSourceBody(cmd *cobra.Command, body, file string) (string, error) {
 		}
 		return string(data), nil
 	}
+	if asset != "" {
+		return "", nil
+	}
 
 	info, err := os.Stdin.Stat()
 	if err != nil {
-		return "", nil
+		// Report it rather than folding it into the silent "no content"
+		// path: the caller passed no content flag and we cannot tell
+		// whether stdin holds any, so "no content" would be a guess.
+		return "", invalidf("checking stdin: %v", err)
 	}
 	if info.Mode()&os.ModeCharDevice != 0 {
 		// stdin is a terminal, so there is nothing piped in.

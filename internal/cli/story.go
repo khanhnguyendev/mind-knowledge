@@ -106,14 +106,17 @@ func init() {
 				return render.JSON(os.Stdout, st)
 			}
 			fmt.Printf("%s  [%s/%s]  %s\n", st.ID, st.Status, st.Priority, st.Title)
-			for label, body := range map[string]string{
-				"description": st.Description,
-				"acceptance":  st.Acceptance,
-				"plan":        st.Plan,
-				"notes":       st.Notes,
+			// An ordered slice, not a map: ranging over a map randomizes
+			// section order between runs, and plain `story view` is a
+			// surface skills parse.
+			for _, section := range []struct{ label, body string }{
+				{"description", st.Description},
+				{"acceptance", st.Acceptance},
+				{"plan", st.Plan},
+				{"notes", st.Notes},
 			} {
-				if body != "" {
-					fmt.Printf("\n## %s\n%s\n", label, body)
+				if section.body != "" {
+					fmt.Printf("\n## %s\n%s\n", section.label, section.body)
 				}
 			}
 			return nil

@@ -44,6 +44,10 @@ func TestUnknownCommandJSONErrorEnvelope(t *testing.T) {
 // -p shorthand. epic create, epic edit, wiki add, wiki edit, and log add
 // all used to fall into this trap; they must read the persistent flag
 // instead of declaring their own.
+//
+// epic edit and wiki edit no longer *act* on -p — reassignment moved to
+// --set-project — but they must still accept it, since -p is a global
+// flag and a skill threading it through every call must not get an error.
 func TestProjectShorthandWorksOnCommandsWithLocalProjectFlag(t *testing.T) {
 	db := newDB(t)
 	pid := seedProject(t, db)

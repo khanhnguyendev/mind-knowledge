@@ -111,6 +111,7 @@ func init() {
 
 	// edit
 	var editSlug, editTitle, editKind, editSummary, editBody, editStatus string
+	var editSetProject string
 	editCmd := &cobra.Command{
 		Use:   "edit <id-or-slug>",
 		Short: "Change a wiki page",
@@ -141,9 +142,12 @@ func init() {
 			if cmd.Flags().Changed("status") {
 				f.Status = &editStatus
 			}
-			if cmd.Flags().Changed("project") {
-				project := ProjectFlag()
-				f.ProjectID = &project
+			// Reassignment reads --set-project, never -p. Overloading
+			// -p here meant that a skill threading -p through every
+			// call — which the README tells it to do — silently pulled
+			// cross-project pages into that project on every edit.
+			if cmd.Flags().Changed("set-project") {
+				f.ProjectID = &editSetProject
 			}
 
 			p, err := s.UpdateWikiPage(args[0], f)
@@ -160,6 +164,9 @@ func init() {
 	editCmd.Flags().StringVar(&editBody, "body", "", "new body")
 	editCmd.Flags().StringVar(&editStatus, "status", "",
 		"new status: current, stale, or superseded")
+	editCmd.Flags().StringVar(&editSetProject, "set-project", "",
+		"reassign the page to this project (id or name); pass an empty "+
+			"string to make it cross-project again")
 
 	// rm
 	rmCmd := &cobra.Command{

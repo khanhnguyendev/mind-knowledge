@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/khanhnguyendev/mind-knowledge/internal/model"
 )
@@ -24,7 +25,13 @@ func scanLogEntry(row interface{ Scan(...any) error }) (*model.LogEntry, error) 
 
 // AddLog appends an entry. The project and ref are optional; kind and
 // summary are not.
+//
+// kind is free text, but it is trimmed and lowercased before storage, the
+// same treatment tag names get. Without it "Done" and "done" are two
+// distinct kinds forever and `log ls --kind done` never finds the first —
+// a silent, unrecoverable split in the one field callers filter on.
 func (s *Store) AddLog(kind, projectID, ref, summary string) (*model.LogEntry, error) {
+	kind = normalizeLogKind(kind)
 	if kind == "" {
 		return nil, fmt.Errorf("%w: log kind is required", ErrInvalid)
 	}
@@ -57,8 +64,16 @@ func (s *Store) AddLog(kind, projectID, ref, summary string) (*model.LogEntry, e
 	return scanLogEntry(row)
 }
 
-// ListLog returns entries newest first.
+// normalizeLogKind puts a log kind into the one form it is stored under.
+func normalizeLogKind(kind string) string {
+	return strings.TrimSpace(strings.ToLower(kind))
+}
+
+// ListLog returns entries newest first. kind is normalized the same way
+// AddLog normalizes it, so a filter always matches what was written.
 func (s *Store) ListLog(kind, projectID string, limit int) ([]model.LogEntry, error) {
+	kind = normalizeLogKind(kind)
+
 	query := `SELECT ` + logColumns + ` FROM log WHERE 1 = 1`
 	args := []any{}
 

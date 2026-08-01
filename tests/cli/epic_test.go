@@ -148,8 +148,10 @@ func TestEpicEditProjectRecomputesPosition(t *testing.T) {
 	requireCode(t, e4json, 0)
 	decode(t, e4json, &e4)
 
-	// Move e1 to proj2 using edit
-	r := mk(t, db, "--json", "epic", "edit", eid, "--project", p2)
+	// Move e1 to proj2 using edit. Reassignment is --set-project, not -p:
+	// -p is a read-time scope everywhere else, and overloading it here
+	// silently moved epics on every edit that merely passed it through.
+	r := mk(t, db, "--json", "epic", "edit", eid, "--set-project", p2)
 	requireCode(t, r, 0)
 
 	// Verify the moved epic has a position greater than the old max in proj2

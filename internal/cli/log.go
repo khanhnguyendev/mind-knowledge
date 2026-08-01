@@ -37,7 +37,8 @@ func init() {
 		},
 	}
 	addCmd.Flags().StringVar(&addKind, "kind", "",
-		"what happened: init, brainstorm, ingest, query, lint, move, done (required)")
+		"what happened: free text, lowercased when stored; suggested: "+
+			"init, brainstorm, ingest, query, lint, move, done (required)")
 	addCmd.Flags().StringVar(&addRef, "ref", "", "id of the entity touched")
 	addCmd.Flags().StringVar(&addSummary, "summary", "", "one line describing it (required)")
 	addCmd.MarkFlagRequired("kind")
@@ -56,6 +57,9 @@ func init() {
 			}
 			defer s.Close()
 
+			if lsTail < 0 {
+				return invalidf("--tail must not be negative (0 means unlimited)")
+			}
 			limit := lsTail
 			if limit == 0 {
 				limit = LimitFlag()

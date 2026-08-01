@@ -16,7 +16,13 @@ func init() {
 	searchCmd := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Full-text search across stories, wiki pages, and sources",
-		Args:  cobra.MinimumNArgs(1),
+		Long: "Search is machine-wide and does not take -p/--project. " +
+			"Sources belong to no project, so a project-scoped search " +
+			"would have to silently drop a third of the index; use " +
+			"--kind to narrow instead.",
+		Args: cobra.MinimumNArgs(1),
+		// Rejecting -p rather than ignoring it: see rejectProjectFlag.
+		PersistentPreRunE: crossProjectPreRun("search results"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := OpenStore()
 			if err != nil {

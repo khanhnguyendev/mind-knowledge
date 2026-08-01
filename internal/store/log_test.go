@@ -92,3 +92,42 @@ func TestListLogFiltersAndLimits(t *testing.T) {
 		t.Errorf("limited entries = %d, want 1", len(limited))
 	}
 }
+
+func TestAddLogNormalizesKind(t *testing.T) {
+	s := testStore(t)
+
+	if _, err := s.AddLog("  Done  ", "", "", "shipped it"); err != nil {
+		t.Fatalf("AddLog: %v", err)
+	}
+
+	entries, err := s.ListLog("", "", 0)
+	if err != nil {
+		t.Fatalf("ListLog: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Kind != "done" {
+		t.Fatalf("stored kind = %+v, want the trimmed lowercase form %q", entries, "done")
+	}
+}
+
+func TestListLogFindsEntriesWrittenWithDifferentCasing(t *testing.T) {
+	s := testStore(t)
+
+	// Two spellings of one kind. Unnormalized they are two kinds forever,
+	// and `log ls --kind done` silently misses half the history.
+	s.AddLog("Done", "", "", "first")
+	s.AddLog("done", "", "", "second")
+
+	entries, err := s.ListLog("DONE", "", 0)
+	if err != nil {
+		t.Fatalf("ListLog: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("ListLog(%q) returned %d entries, want both: %+v", "DONE", len(entries), entries)
+	}
+}
+
+func TestAddLogRejectsAWhitespaceOnlyKind(t *testing.T) {
+	if _, err := testStore(t).AddLog("   ", "", "", "summary"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("AddLog with a blank kind: err = %v, want ErrInvalid", err)
+	}
+}

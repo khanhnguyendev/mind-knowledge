@@ -13,7 +13,9 @@ func init() {
 		Use:   "tag",
 		Short: "Group entities with flat labels",
 		Long: "Targets are written kind:reference, for example story:b4g3l2. " +
-			"Tags cut across projects and epics.",
+			"Tags cut across projects and epics, so no tag command takes " +
+			"-p/--project.",
+		PersistentPreRunE: crossProjectPreRun("tags"),
 	}
 
 	// add

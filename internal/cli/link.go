@@ -15,7 +15,9 @@ func init() {
 		Short: "Connect entities to each other",
 		Long: "Endpoints are written kind:reference, for example " +
 			"wiki:auth-model or story:b4g3l2. Valid kinds are project, epic, " +
-			"story, source, and wiki.",
+			"story, source, and wiki. An edge may join entities in different " +
+			"projects, so no link command takes -p/--project.",
+		PersistentPreRunE: crossProjectPreRun("links"),
 	}
 
 	// add

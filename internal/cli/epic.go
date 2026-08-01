@@ -101,7 +101,7 @@ func init() {
 	}
 
 	// edit
-	var editTitle, editDesc string
+	var editTitle, editDesc, editSetProject string
 	editCmd := &cobra.Command{
 		Use:   "edit <id>",
 		Short: "Change epic fields",
@@ -120,9 +120,12 @@ func init() {
 			if cmd.Flags().Changed("description") {
 				f.Description = &editDesc
 			}
-			if cmd.Flags().Changed("project") {
-				project := ProjectFlag()
-				f.ProjectID = &project
+			// Reassignment reads --set-project, never -p. Overloading
+			// -p here meant that a skill threading -p through every
+			// call — which the README tells it to do — silently moved
+			// the epic to that project on every edit.
+			if cmd.Flags().Changed("set-project") {
+				f.ProjectID = &editSetProject
 			}
 
 			e, err := s.UpdateEpic(args[0], f)
@@ -134,6 +137,8 @@ func init() {
 	}
 	editCmd.Flags().StringVar(&editTitle, "title", "", "new title")
 	editCmd.Flags().StringVarP(&editDesc, "description", "d", "", "new description")
+	editCmd.Flags().StringVar(&editSetProject, "set-project", "",
+		"move the epic to this project (id or name)")
 
 	// mv
 	var mvTo string

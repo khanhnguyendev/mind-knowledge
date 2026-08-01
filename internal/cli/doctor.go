@@ -17,7 +17,11 @@ func init() {
 		Use:   "doctor",
 		Short: "Report drift across the wiki, stories, and projects",
 		Long: "Reports problems and repairs nothing. Exits 0 even when it " +
-			"finds something: the findings are information for a skill to act on.",
+			"finds something: the findings are information for a skill to act on.\n\n" +
+			"-p/--project restricts the report to one project's epics, " +
+			"stories, and wiki pages. Sources and links belong to no " +
+			"project, so wiki.unprocessed and wiki.dangling are always " +
+			"reported machine-wide.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := OpenStore()
 			if err != nil {
@@ -25,9 +29,13 @@ func init() {
 			}
 			defer s.Close()
 
-			findings, err := doctor.Run(s, scopes)
+			// Errors pass through unwrapped so they keep their class: an
+			// unknown --scope is bad input (2), while an unknown -p is a
+			// not-found (1), the same as on every other command that
+			// honours -p.
+			findings, err := doctor.Run(s, scopes, ProjectFlag())
 			if err != nil {
-				return invalidf("%v", err)
+				return err
 			}
 			if JSONMode() {
 				return render.JSON(os.Stdout, findings)
