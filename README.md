@@ -58,8 +58,9 @@ flag list, including each subcommand's own flags (for example
   prints nothing in plain mode and the created edge (no `id` field)
   under `--json`; `tag add` prints nothing in either mode. Exit code `0`
   is the success signal for both.
-- `-p`/`--project` is a **read-time scope**, and it is never silently
-  ignored. Every command either honours it or rejects it:
+- `-p`/`--project` is a **read-time scope**. Check this table before
+  relying on it; it does not do the same thing everywhere, and on the
+  commands not listed it does nothing at all:
 
   | Command | `-p` |
   |---|---|
@@ -72,6 +73,13 @@ flag list, including each subcommand's own flags (for example
   projects. Accepting `-p` there and ignoring it would let a skill that
   threads `-p` through every call believe it had scoped a result set that
   is in fact machine-wide.
+
+  **Every other command accepts `-p` and ignores it.** That is harmless
+  on the ones that address a single entity by id (`epic view`, `story
+  mv`, `wiki rm`, and the rest) — there is nothing there to scope. The
+  one to watch is **`mk project ls -p <p>`, which lists every project,
+  not that one.** Filter `project ls` yourself, or read the project you
+  want with `mk project view <p>`.
 - Reassigning an existing record's project is `--set-project`, not `-p`:
   `epic edit <id> --set-project <p>` moves the epic, and
   `wiki edit <id> --set-project <p>` reassigns the page (pass an empty
