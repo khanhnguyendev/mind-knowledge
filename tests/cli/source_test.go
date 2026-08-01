@@ -59,6 +59,52 @@ func TestSourceAddFromFile(t *testing.T) {
 	}
 }
 
+// TestSourceAddBodyWinsOverFile confirms --body takes precedence when both
+// --body and --file are given, per the documented precedence order.
+func TestSourceAddBodyWinsOverFile(t *testing.T) {
+	db := newDB(t)
+
+	path := filepath.Join(t.TempDir(), "clip.md")
+	if err := os.WriteFile(path, []byte("from file"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	r := mk(t, db, "--json", "source", "add",
+		"--title", "Both", "--body", "from flag", "--file", path)
+	requireCode(t, r, 0)
+
+	var src struct {
+		Body string `json:"body"`
+	}
+	decode(t, r, &src)
+	if src.Body != "from flag" {
+		t.Errorf("body = %q, want the --body value to win over --file", src.Body)
+	}
+}
+
+// TestSourceAddFileWinsOverStdin confirms --file takes precedence over
+// piped stdin when both are present.
+func TestSourceAddFileWinsOverStdin(t *testing.T) {
+	db := newDB(t)
+
+	path := filepath.Join(t.TempDir(), "clip.md")
+	if err := os.WriteFile(path, []byte("from file"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cmd := exec.Command(binPath, "--json", "source", "add", "--title", "Both", "--file", path)
+	cmd.Env = append(os.Environ(), "MK_DB="+db)
+	cmd.Stdin = strings.NewReader("from stdin")
+
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("running mk: %v", err)
+	}
+	if !strings.Contains(string(out), "from file") || strings.Contains(string(out), "from stdin") {
+		t.Errorf("output = %s, want --file to win over piped stdin", out)
+	}
+}
+
 func TestSourceAddFromStdin(t *testing.T) {
 	db := newDB(t)
 
