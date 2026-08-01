@@ -191,3 +191,82 @@ func TestListWikiPagesNullProjectRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+// TestUpdateWikiPageClearsProjectID checks the reverse transition: a page
+// scoped to a project gets its ProjectID field pointed at "" and must come
+// back cross-project — ProjectID empty, visible in an unscoped list, gone
+// from a list scoped to its old project. This exercises both the
+// *f.ProjectID == "" branch in UpdateWikiPage and the nullable() wrap on
+// the UPDATE statement; either regressing would leave the row still
+// pointing at the old project, or fail the write against the project_id
+// foreign key.
+func TestUpdateWikiPageClearsProjectID(t *testing.T) {
+	s := testStore(t)
+	pid := seedProject(t, s)
+
+	p, err := s.CreateWikiPage("", "Scoped", "spec", "", "a", pid)
+	if err != nil {
+		t.Fatalf("CreateWikiPage: %v", err)
+	}
+	if p.ProjectID != pid {
+		t.Fatalf("ProjectID = %q, want %q before the update", p.ProjectID, pid)
+	}
+
+	empty := ""
+	updated, err := s.UpdateWikiPage(p.ID, WikiFields{ProjectID: &empty})
+	if err != nil {
+		t.Fatalf("UpdateWikiPage: %v", err)
+	}
+	if updated.ProjectID != "" {
+		t.Errorf("ProjectID = %q, want empty after clearing", updated.ProjectID)
+	}
+
+	unscoped, err := s.ListWikiPages("", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListWikiPages (unscoped): %v", err)
+	}
+	found := false
+	for _, page := range unscoped {
+		if page.ID == p.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("unscoped list did not include %q after clearing its project", p.ID)
+	}
+
+	scoped, err := s.ListWikiPages("", "", pid, 0)
+	if err != nil {
+		t.Fatalf("ListWikiPages (scoped to old project): %v", err)
+	}
+	for _, page := range scoped {
+		if page.ID == p.ID {
+			t.Errorf("list scoped to old project %q still included %q after clearing", pid, p.ID)
+		}
+	}
+}
+
+// TestUpdateWikiPageRejectsSlugCollision checks the backstop in
+// UpdateWikiPage: CreateWikiPage has a check-then-insert guard for
+// duplicate slugs, but UpdateWikiPage relies solely on the UNIQUE
+// constraint plus isUniqueViolation mapping the resulting driver error to
+// ErrInvalid. If that mapping ever stopped recognizing the driver's error
+// shape, this would start exiting 3 (ErrDB) instead of 2 (ErrInvalid) at
+// the CLI layer — this test pins the sentinel that mapping produces.
+func TestUpdateWikiPageRejectsSlugCollision(t *testing.T) {
+	s := testStore(t)
+
+	first, err := s.CreateWikiPage("", "First Page", "concept", "", "a", "")
+	if err != nil {
+		t.Fatalf("CreateWikiPage first: %v", err)
+	}
+	second, err := s.CreateWikiPage("", "Second Page", "concept", "", "b", "")
+	if err != nil {
+		t.Fatalf("CreateWikiPage second: %v", err)
+	}
+
+	_, err = s.UpdateWikiPage(second.ID, WikiFields{Slug: &first.Slug})
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("err = %v, want ErrInvalid when renaming onto an existing slug", err)
+	}
+}
