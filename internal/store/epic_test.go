@@ -14,15 +14,6 @@ func seedProject(t *testing.T, s *Store) string {
 	return p.ID
 }
 
-func seedEpic(t *testing.T, s *Store, pid string) string {
-	t.Helper()
-	e, err := s.CreateEpic(pid, "Test Epic", "")
-	if err != nil {
-		t.Fatalf("CreateEpic: %v", err)
-	}
-	return e.ID
-}
-
 func TestCreateEpicDefaults(t *testing.T) {
 	s := testStore(t)
 	pid := seedProject(t, s)
@@ -113,5 +104,83 @@ func TestDeleteProjectCascadesToEpics(t *testing.T) {
 	}
 	if _, err := s.GetEpic(e.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("epic survived project delete: %v", err)
+	}
+}
+
+func TestUpdateEpicMoveToProjectRecomputesPosition(t *testing.T) {
+	s := testStore(t)
+	p1, _ := s.CreateProject("proj1", "/tmp/proj1", "")
+	p2, _ := s.CreateProject("proj2", "/tmp/proj2", "")
+
+	// Create epics in proj1
+	e1, _ := s.CreateEpic(p1.ID, "Epic One", "")
+	e2, _ := s.CreateEpic(p1.ID, "Epic Two", "")
+
+	// Create existing epics in proj2
+	_, _ = s.CreateEpic(p2.ID, "Existing One", "")
+	e4, _ := s.CreateEpic(p2.ID, "Existing Two", "")
+	oldP2MaxPos := e4.Position
+
+	// Move e1 to proj2 without specifying position
+	newProj := p2.ID
+	updated, err := s.UpdateEpic(e1.ID, EpicFields{ProjectID: &newProj})
+	if err != nil {
+		t.Fatalf("UpdateEpic: %v", err)
+	}
+
+	// Verify it moved to the right project
+	if updated.ProjectID != p2.ID {
+		t.Errorf("ProjectID = %q, want %q", updated.ProjectID, p2.ID)
+	}
+
+	// Verify position was recomputed (should be after max position in proj2)
+	if updated.Position <= oldP2MaxPos {
+		t.Errorf("position = %d, want > %d (position should be after existing siblings)", updated.Position, oldP2MaxPos)
+	}
+
+	// Verify it still exists in proj2 and has the right position
+	retrieved, err := s.GetEpic(e1.ID)
+	if err != nil {
+		t.Fatalf("GetEpic: %v", err)
+	}
+	if retrieved.ProjectID != p2.ID || retrieved.Position != updated.Position {
+		t.Errorf("retrieved epic = %+v, want ProjectID %q and Position %d", retrieved, p2.ID, updated.Position)
+	}
+
+	// Verify proj1 still has e2
+	e2Check, _ := s.GetEpic(e2.ID)
+	if e2Check.ProjectID != p1.ID {
+		t.Errorf("e2 should still be in proj1")
+	}
+}
+
+func TestUpdateEpicMoveToProjectWithExplicitPositionDoesNotRecompute(t *testing.T) {
+	s := testStore(t)
+	p1, _ := s.CreateProject("proj1", "/tmp/proj1", "")
+	p2, _ := s.CreateProject("proj2", "/tmp/proj2", "")
+
+	// Create epics in proj1
+	e1, _ := s.CreateEpic(p1.ID, "Epic One", "")
+
+	// Create existing epics in proj2 to set up state
+	_, _ = s.CreateEpic(p2.ID, "Existing One", "")
+	_, _ = s.CreateEpic(p2.ID, "Existing Two", "")
+
+	// Move e1 to proj2 WITH explicit position 99
+	newProj := p2.ID
+	explicitPos := 99
+	updated, err := s.UpdateEpic(e1.ID, EpicFields{ProjectID: &newProj, Position: &explicitPos})
+	if err != nil {
+		t.Fatalf("UpdateEpic: %v", err)
+	}
+
+	// Verify it moved to the right project
+	if updated.ProjectID != p2.ID {
+		t.Errorf("ProjectID = %q, want %q", updated.ProjectID, p2.ID)
+	}
+
+	// Verify position is exactly what was specified (not recomputed)
+	if updated.Position != 99 {
+		t.Errorf("position = %d, want 99 (should use explicit position)", updated.Position)
 	}
 }

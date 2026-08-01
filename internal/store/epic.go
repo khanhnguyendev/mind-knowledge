@@ -167,6 +167,15 @@ func (s *Store) UpdateEpic(id string, f EpicFields) (*model.Epic, error) {
 			return nil, err
 		}
 		next.ProjectID = p.ID
+		// If moving to a different project and position wasn't explicitly set,
+		// recompute position so the epic lands at the end of its new siblings.
+		if next.ProjectID != current.ProjectID && f.Position == nil {
+			pos, err := s.nextPosition("epics", "project_id", next.ProjectID)
+			if err != nil {
+				return nil, err
+			}
+			next.Position = pos
+		}
 	}
 
 	_, err = s.db.Exec(
