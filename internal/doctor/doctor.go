@@ -25,12 +25,22 @@ type Finding struct {
 	Message string `json:"message"`
 }
 
-// wikilinkPattern matches [[slug]] references inside page bodies.
-var wikilinkPattern = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
+// wikilinkPattern matches [[target]] and [[target|label]] references
+// inside page bodies, capturing only the target.
+//
+// The target must not itself contain a bracket or a pipe. That is what
+// keeps the capture actionable: a finding names a slug a skill can go and
+// create, so capturing "Target Page|the label" (which slugifies to
+// target-page-the-label, a page that can never legitimately exist) would
+// send the skill off to create the wrong page while the real target stayed
+// missing and the finding re-fired forever.
+var wikilinkPattern = regexp.MustCompile(`\[\[([^\[\]|]+)(?:\|[^\[\]]*)?\]\]`)
 
 // Run executes the checks named by scopes. An empty scopes slice runs
-// everything.
-func Run(s *store.Store, scopes []string) ([]Finding, error) {
+// everything. A non-empty projectID restricts the checks to the entities
+// that belong to that project; see each check for what that means, since
+// sources and links belong to no project at all.
+func Run(s *store.Store, scopes []string, projectID string) ([]Finding, error) {
 	if len(scopes) == 0 {
 		scopes = []string{"wiki", "stories", "projects"}
 	}
@@ -43,14 +53,15 @@ func Run(s *store.Store, scopes []string) ([]Finding, error) {
 		)
 		switch scope {
 		case "wiki":
-			got, err = checkWiki(s)
+			got, err = checkWiki(s, projectID)
 		case "stories":
-			got, err = checkStories(s)
+			got, err = checkStories(s, projectID)
 		case "projects":
-			got, err = checkProjects(s)
+			got, err = checkProjects(s, projectID)
 		default:
 			return nil, fmt.Errorf(
-				"unknown doctor scope %q (want wiki, stories, or projects)", scope)
+				"%w: unknown doctor scope %q (want wiki, stories, or projects)",
+				store.ErrInvalid, scope)
 		}
 		if err != nil {
 			return nil, err
@@ -60,11 +71,29 @@ func Run(s *store.Store, scopes []string) ([]Finding, error) {
 	return findings, nil
 }
 
-func checkWiki(s *store.Store) ([]Finding, error) {
-	pages, err := s.ListWikiPages("", "", "", 0)
+func checkWiki(s *store.Store, projectID string) ([]Finding, error) {
+	// The pages reported on are the ones in scope.
+	pages, err := s.ListWikiPages("", "", projectID, 0)
 	if err != nil {
 		return nil, err
 	}
+
+	// Everything a page is judged *against*, though, stays machine-wide.
+	// A slug resolves across the whole wiki, so a [[wikilink]] into
+	// another project's page is not missing; and an inbound link from
+	// another project's page is still an inbound link.
+	allPages := pages
+	if projectID != "" {
+		allPages, err = s.ListWikiPages("", "", "", 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Sources carry no project at all, so wiki.unprocessed is reported
+	// machine-wide even under -p: an uningested source is a debt against
+	// the wiki as a whole, and scoping it away would leave no way to see
+	// it.
 	sources, err := s.ListSources("", 0)
 	if err != nil {
 		return nil, err
@@ -72,6 +101,14 @@ func checkWiki(s *store.Store) ([]Finding, error) {
 	links, err := s.ListLinks("", "", "", "", "")
 	if err != nil {
 		return nil, err
+	}
+	dangling, err := s.DanglingLinks()
+	if err != nil {
+		return nil, err
+	}
+	isDangling := make(map[model.Link]bool, len(dangling))
+	for _, l := range dangling {
+		isDangling[l] = true
 	}
 
 	// Build the link maps once, from links, so wiki.uncited and
@@ -85,6 +122,13 @@ func checkWiki(s *store.Store) ([]Finding, error) {
 	citedSources := map[string]bool{}
 
 	for _, l := range links {
+		// An edge whose endpoint no longer exists must not vouch for the
+		// end that survived. Left in, one leaked edge silently turns off
+		// wiki.orphans, wiki.uncited, and wiki.unprocessed for its
+		// surviving endpoint — for good.
+		if isDangling[l] {
+			continue
+		}
 		// A link from a page to itself is not an inbound link from
 		// anything else, so it must not count toward "has inbound
 		// links."
@@ -106,12 +150,27 @@ func checkWiki(s *store.Store) ([]Finding, error) {
 	}
 
 	knownSlugs := map[string]bool{}
-	for _, p := range pages {
+	for _, p := range allPages {
 		knownSlugs[p.Slug] = true
 	}
 
 	findings := []Finding{}
 	reportedMissing := map[string]bool{}
+
+	// Dangling edges are integrity damage, not project drift: with an
+	// endpoint gone there is nothing left to tell us whose project it
+	// was, so they are reported whatever -p says. mk's own Delete* paths
+	// no longer produce them; these are what a database written by an
+	// older binary still carries.
+	for _, l := range dangling {
+		findings = append(findings, Finding{
+			Check: "wiki.dangling", Kind: "link",
+			ID: l.FromKind + ":" + l.FromID,
+			Message: fmt.Sprintf(
+				"edge %s:%s -[%s]-> %s:%s names an entity that no longer exists",
+				l.FromKind, l.FromID, l.Relation, l.ToKind, l.ToID),
+		})
+	}
 
 	for _, p := range pages {
 		if !inbound[p.ID] {
@@ -136,6 +195,12 @@ func checkWiki(s *store.Store) ([]Finding, error) {
 
 		for _, match := range wikilinkPattern.FindAllStringSubmatch(p.Body, -1) {
 			target := model.Slugify(match[1])
+			// [[ ]] and friends slugify to nothing. There is no page a
+			// skill could create to satisfy such a finding, so reporting
+			// one only produces noise that can never be cleared.
+			if target == "" {
+				continue
+			}
 			if knownSlugs[target] || reportedMissing[target] {
 				continue
 			}
@@ -159,17 +224,20 @@ func checkWiki(s *store.Store) ([]Finding, error) {
 	return findings, nil
 }
 
-func checkStories(s *store.Store) ([]Finding, error) {
-	stories, err := s.ListStories(store.StoryFilter{})
+func checkStories(s *store.Store, projectID string) ([]Finding, error) {
+	stories, err := s.ListStories(store.StoryFilter{ProjectID: projectID})
 	if err != nil {
 		return nil, err
 	}
-	epics, err := s.ListEpics("", "", 0)
+	epics, err := s.ListEpics(projectID, "", 0)
 	if err != nil {
 		return nil, err
 	}
 
-	cutoff := time.Now().UTC().AddDate(0, 0, -StrandedAfterDays)
+	// store.Now, not time.Now: the store stamps UpdatedAt from it, so a
+	// test that moves the clock to age a story must move the same clock
+	// the cutoff is measured from.
+	cutoff := store.Now().UTC().AddDate(0, 0, -StrandedAfterDays)
 	populated := map[string]bool{}
 	findings := []Finding{}
 
@@ -187,8 +255,11 @@ func checkStories(s *store.Store) ([]Finding, error) {
 			if err == nil && updated.Before(cutoff) {
 				findings = append(findings, Finding{
 					Check: "story.stranded", Kind: "story", ID: st.ID,
+					// "untouched since", not "in-progress since":
+					// UpdatedAt moves on any edit, so it dates the last
+					// change of any kind, not the move into in-progress.
 					Message: fmt.Sprintf(
-						"%q has been in-progress since %s", st.Title, st.UpdatedAt),
+						"%q is in-progress and untouched since %s", st.Title, st.UpdatedAt),
 				})
 			}
 		}
@@ -206,10 +277,20 @@ func checkStories(s *store.Store) ([]Finding, error) {
 	return findings, nil
 }
 
-func checkProjects(s *store.Store) ([]Finding, error) {
-	projects, err := s.ListProjects("", 0)
-	if err != nil {
-		return nil, err
+func checkProjects(s *store.Store, projectID string) ([]Finding, error) {
+	var projects []model.Project
+	if projectID != "" {
+		p, err := s.GetProject(projectID)
+		if err != nil {
+			return nil, err
+		}
+		projects = []model.Project{*p}
+	} else {
+		var err error
+		projects, err = s.ListProjects("", 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	findings := []Finding{}
