@@ -108,6 +108,34 @@ func TestSyncScopedByProjectFlag(t *testing.T) {
 	}
 }
 
+// TestSyncAllProjectsWithoutFlag is the unscoped counterpart to
+// TestSyncScopedByProjectFlag: without -p, every registered project is
+// checked, not just the first or last one registered.
+func TestSyncAllProjectsWithoutFlag(t *testing.T) {
+	db := newDB(t)
+
+	mk(t, db, "project", "add", "--name", "one", "--path", initRepo(t))
+	mk(t, db, "project", "add", "--name", "two", "--path", initRepo(t))
+
+	r := mk(t, db, "--json", "sync")
+	requireCode(t, r, 0)
+
+	var results []struct {
+		Project struct {
+			Name string `json:"name"`
+		} `json:"project"`
+	}
+	decode(t, r, &results)
+
+	if len(results) != 2 {
+		t.Fatalf("results = %+v, want 2", results)
+	}
+	names := map[string]bool{results[0].Project.Name: true, results[1].Project.Name: true}
+	if !names["one"] || !names["two"] {
+		t.Errorf("results = %+v, want both one and two", results)
+	}
+}
+
 // TestSyncScopedByProjectFlagUnknownProject checks that -p with an absent
 // project fails the same way every other -p-scoped command does: exit 1,
 // not a silently empty or successful sync. This is the defect class this
