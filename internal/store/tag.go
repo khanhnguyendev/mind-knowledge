@@ -124,6 +124,10 @@ func (s *Store) TaggedWith(name string) ([]model.Link, error) {
 // RemoveTag detaches a tag from an entity.
 func (s *Store) RemoveTag(name, entityKind, entityID string) error {
 	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return fmt.Errorf("%w: tag name is required", ErrInvalid)
+	}
+
 	resolved, err := s.resolveEntity(entityKind, entityID)
 	if err != nil {
 		return err

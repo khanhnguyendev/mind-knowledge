@@ -46,6 +46,11 @@ func init() {
 		Use:   "ls",
 		Short: "List tag names, an entity's tags, or a tag's entities",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Flags are mutually exclusive: --on and --tag cannot both be set
+			if lsOn != "" && lsTag != "" {
+				return invalidf("--on and --tag are mutually exclusive")
+			}
+
 			s, err := OpenStore()
 			if err != nil {
 				return err
@@ -100,8 +105,8 @@ func init() {
 			}
 		},
 	}
-	lsCmd.Flags().StringVar(&lsOn, "on", "", "show the tags attached to this entity")
-	lsCmd.Flags().StringVar(&lsTag, "tag", "", "show the entities carrying this tag")
+	lsCmd.Flags().StringVar(&lsOn, "on", "", "show the tags attached to this entity (cannot use with --tag)")
+	lsCmd.Flags().StringVar(&lsTag, "tag", "", "show the entities carrying this tag (cannot use with --on)")
 
 	// rm
 	var rmOn string

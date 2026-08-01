@@ -127,6 +127,16 @@ func TestTagRemoveMissingEntityExitsOne(t *testing.T) {
 	requireCode(t, r, 1)
 }
 
+func TestTagRemoveEmptyNameExitsTwo(t *testing.T) {
+	db := newDB(t)
+	eid := seedEpic(t, db)
+	sid := strings.TrimSpace(mk(t, db, "story", "create", "--epic", eid, "--title", "x").stdout)
+
+	// RemoveTag with empty name should exit 2 (bad input), same as AddTag
+	r := mk(t, db, "tag", "rm", "", "--on", "story:"+sid)
+	requireCode(t, r, 2)
+}
+
 func TestTagEmptyListAllNames(t *testing.T) {
 	db := newDB(t)
 

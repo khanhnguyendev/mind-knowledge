@@ -175,6 +175,17 @@ func TestRemoveTagValidatesEntity(t *testing.T) {
 	}
 }
 
+func TestRemoveTagRejectsEmptyName(t *testing.T) {
+	s := testStore(t)
+	eid := seedEpic(t, s)
+	st, _ := s.CreateStory(eid, "x", "")
+
+	// RemoveTag should reject empty tag name with ErrInvalid, same as AddTag
+	if err := s.RemoveTag("", "story", st.ID); !errors.Is(err, ErrInvalid) {
+		t.Errorf("err = %v, want ErrInvalid (not ErrNotFound)", err)
+	}
+}
+
 func TestEmptyTagsFor(t *testing.T) {
 	s := testStore(t)
 	eid := seedEpic(t, s)
