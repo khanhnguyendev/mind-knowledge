@@ -1,0 +1,18 @@
+# Build output
+/mk
+/dist/
+
+# Local database and assets
+*.db
+*.db-wal
+*.db-shm
+
+# Working docs kept local, not published
+docs/superpowers/
+
+# Worktrees and agent scratch
+.worktrees/
+.superpowers/
+
+# OS noise
+.DS_Store
