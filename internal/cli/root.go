@@ -21,6 +21,10 @@ var (
 	flagDB      string
 )
 
+// Version is stamped at build time with -ldflags. It defaults to "dev" so
+// a plain `go build` still produces a working binary.
+var Version = "dev"
+
 // Root is the top-level command. Each entity's file attaches its
 // subcommands to it from an init function.
 var Root = &cobra.Command{
@@ -37,6 +41,9 @@ func init() {
 	f.StringVarP(&flagProject, "project", "p", "", "scope to a project by id or name")
 	f.IntVar(&flagLimit, "limit", 0, "maximum rows to return (0 means unlimited)")
 	f.StringVar(&flagDB, "db", "", "database path (default $MK_DB or ~/.mind-knowledge/mk.db)")
+
+	Root.Version = Version
+	Root.SetVersionTemplate("mk {{.Version}}\n")
 
 	// Root has no work of its own: no args prints help, and any
 	// unrecognized positional arg is an invalid-input error.
