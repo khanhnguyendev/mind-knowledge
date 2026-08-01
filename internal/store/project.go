@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -193,37 +194,32 @@ func (s *Store) DeleteProject(id string) error {
 		return err
 	}
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("%w: deleting project: %v", ErrDB, err)
-	}
-	defer tx.Rollback()
+	// This transaction reads before it writes, so it must be IMMEDIATE:
+	// see withImmediateTx.
+	return s.withImmediateTx("deleting project", func(ctx context.Context, conn *sql.Conn) error {
+		epicIDs, err := txIDs(ctx, conn, `SELECT id FROM epics WHERE project_id = ?`, p.ID)
+		if err != nil {
+			return err
+		}
+		storyIDs, err := txIDs(ctx, conn,
+			`SELECT s.id FROM stories s JOIN epics e ON e.id = s.epic_id
+			 WHERE e.project_id = ?`, p.ID)
+		if err != nil {
+			return err
+		}
 
-	epicIDs, err := txIDs(tx, `SELECT id FROM epics WHERE project_id = ?`, p.ID)
-	if err != nil {
-		return err
-	}
-	storyIDs, err := txIDs(tx,
-		`SELECT s.id FROM stories s JOIN epics e ON e.id = s.epic_id
-		 WHERE e.project_id = ?`, p.ID)
-	if err != nil {
-		return err
-	}
-
-	if err := deleteEntityRefs(tx, "story", storyIDs); err != nil {
-		return err
-	}
-	if err := deleteEntityRefs(tx, "epic", epicIDs); err != nil {
-		return err
-	}
-	if err := deleteEntityRefs(tx, "project", []string{p.ID}); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, p.ID); err != nil {
-		return fmt.Errorf("%w: deleting project: %v", ErrDB, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("%w: deleting project: %v", ErrDB, err)
-	}
-	return nil
+		if err := deleteEntityRefs(ctx, conn, "story", storyIDs); err != nil {
+			return err
+		}
+		if err := deleteEntityRefs(ctx, conn, "epic", epicIDs); err != nil {
+			return err
+		}
+		if err := deleteEntityRefs(ctx, conn, "project", []string{p.ID}); err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, p.ID); err != nil {
+			return fmt.Errorf("%w: deleting project: %v", ErrDB, err)
+		}
+		return nil
+	})
 }

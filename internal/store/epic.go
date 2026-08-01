@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -205,27 +206,22 @@ func (s *Store) DeleteEpic(id string) error {
 		return err
 	}
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("%w: deleting epic: %v", ErrDB, err)
-	}
-	defer tx.Rollback()
-
-	storyIDs, err := txIDs(tx, `SELECT id FROM stories WHERE epic_id = ?`, e.ID)
-	if err != nil {
-		return err
-	}
-	if err := deleteEntityRefs(tx, "story", storyIDs); err != nil {
-		return err
-	}
-	if err := deleteEntityRefs(tx, "epic", []string{e.ID}); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`DELETE FROM epics WHERE id = ?`, e.ID); err != nil {
-		return fmt.Errorf("%w: deleting epic: %v", ErrDB, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("%w: deleting epic: %v", ErrDB, err)
-	}
-	return nil
+	// This transaction reads before it writes, so it must be IMMEDIATE:
+	// see withImmediateTx.
+	return s.withImmediateTx("deleting epic", func(ctx context.Context, conn *sql.Conn) error {
+		storyIDs, err := txIDs(ctx, conn, `SELECT id FROM stories WHERE epic_id = ?`, e.ID)
+		if err != nil {
+			return err
+		}
+		if err := deleteEntityRefs(ctx, conn, "story", storyIDs); err != nil {
+			return err
+		}
+		if err := deleteEntityRefs(ctx, conn, "epic", []string{e.ID}); err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, `DELETE FROM epics WHERE id = ?`, e.ID); err != nil {
+			return fmt.Errorf("%w: deleting epic: %v", ErrDB, err)
+		}
+		return nil
+	})
 }

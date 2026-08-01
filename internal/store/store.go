@@ -160,33 +160,36 @@ func openOnce(path string) (*Store, error) {
 // Close releases the database handle.
 func (s *Store) Close() error { return s.db.Close() }
 
-// migrate applies every embedded migration whose version exceeds the
-// highest already recorded, in filename order.
+// withImmediateTx runs fn inside a BEGIN IMMEDIATE transaction held on one
+// dedicated connection, committing if fn returns nil and rolling back
+// otherwise. what names the operation for the error messages.
 //
-// The whole read-then-apply sequence runs inside one BEGIN IMMEDIATE
-// transaction, which is what makes it safe across processes. BEGIN
-// IMMEDIATE takes the write lock up front, so a second mk process starting
-// against the same brand-new database waits (busy_timeout) and then reads
-// a schema_migrations that already names every migration, instead of also
-// reading version 0 and also trying to create the schema — which fails
-// with "table projects already exists". A deferred BEGIN, which is what
-// database/sql issues, would not do: both processes would take a read lock
-// first and then deadlock trying to upgrade it, a case busy_timeout cannot
-// resolve.
-func (s *Store) migrate() error {
+// IMMEDIATE, not the deferred BEGIN that database/sql issues, and this is
+// not a preference. A deferred transaction that reads before it writes
+// takes a read lock and then has to upgrade it for the first write —
+// and SQLite answers a lock upgrade it cannot grant with SQLITE_BUSY
+// immediately, without consulting the busy handler. busy_timeout does not
+// help, so the transaction simply fails whenever another writer is active.
+// IMMEDIATE takes the write lock up front, which is the one case
+// busy_timeout does cover: contending callers queue instead of failing.
+//
+// Every read-then-write transaction in this package must go through here.
+func (s *Store) withImmediateTx(what string, fn func(ctx context.Context, conn *sql.Conn) error) error {
 	ctx := context.Background()
 
 	// One dedicated connection: BEGIN/COMMIT are connection state, so they
 	// must not be scattered across the pool.
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: opening a migration connection: %w", ErrDB, err)
+		return fmt.Errorf("%w: %s: %w", ErrDB, what, err)
 	}
 	defer conn.Close()
 
 	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
-		return fmt.Errorf("%w: starting migrations: %w", ErrDB, err)
+		return fmt.Errorf("%w: %s: %w", ErrDB, what, err)
 	}
+	// Deferred LIFO: this rollback runs before conn.Close above, so the
+	// connection never returns to the pool inside a transaction.
 	committed := false
 	defer func() {
 		if !committed {
@@ -194,50 +197,68 @@ func (s *Store) migrate() error {
 		}
 	}()
 
-	if _, err := conn.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)`); err != nil {
-		return fmt.Errorf("%w: creating schema_migrations: %w", ErrDB, err)
-	}
-
-	var applied int
-	if err := conn.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&applied); err != nil {
-		return fmt.Errorf("%w: reading schema_migrations: %w", ErrDB, err)
-	}
-
-	entries, err := migrationFS.ReadDir("migrations")
-	if err != nil {
-		return fmt.Errorf("%w: reading embedded migrations: %v", ErrDB, err)
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		version := migrationVersion(name)
-		if version <= applied {
-			continue
-		}
-		body, err := migrationFS.ReadFile("migrations/" + name)
-		if err != nil {
-			return fmt.Errorf("%w: reading migration %s: %v", ErrDB, name, err)
-		}
-		if _, err := conn.ExecContext(ctx, string(body)); err != nil {
-			return fmt.Errorf("%w: applying migration %s: %w", ErrDB, name, err)
-		}
-		if _, err := conn.ExecContext(ctx,
-			`INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
-			return fmt.Errorf("%w: recording migration %s: %w", ErrDB, name, err)
-		}
+	if err := fn(ctx, conn); err != nil {
+		return err
 	}
 
 	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
-		return fmt.Errorf("%w: committing migrations: %w", ErrDB, err)
+		return fmt.Errorf("%w: %s: %w", ErrDB, what, err)
 	}
 	committed = true
 	return nil
+}
+
+// migrate applies every embedded migration whose version exceeds the
+// highest already recorded, in filename order.
+//
+// The whole read-then-apply sequence runs inside one transaction, which is
+// what makes it safe across processes: a second mk process starting
+// against the same brand-new database waits and then reads a
+// schema_migrations that already names every migration, instead of also
+// reading version 0 and also trying to create the schema — which fails
+// with "table projects already exists".
+func (s *Store) migrate() error {
+	return s.withImmediateTx("running migrations", func(ctx context.Context, conn *sql.Conn) error {
+		if _, err := conn.ExecContext(ctx,
+			`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)`); err != nil {
+			return fmt.Errorf("%w: creating schema_migrations: %w", ErrDB, err)
+		}
+
+		var applied int
+		if err := conn.QueryRowContext(ctx,
+			`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&applied); err != nil {
+			return fmt.Errorf("%w: reading schema_migrations: %w", ErrDB, err)
+		}
+
+		entries, err := migrationFS.ReadDir("migrations")
+		if err != nil {
+			return fmt.Errorf("%w: reading embedded migrations: %v", ErrDB, err)
+		}
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		sort.Strings(names)
+
+		for _, name := range names {
+			version := migrationVersion(name)
+			if version <= applied {
+				continue
+			}
+			body, err := migrationFS.ReadFile("migrations/" + name)
+			if err != nil {
+				return fmt.Errorf("%w: reading migration %s: %v", ErrDB, name, err)
+			}
+			if _, err := conn.ExecContext(ctx, string(body)); err != nil {
+				return fmt.Errorf("%w: applying migration %s: %w", ErrDB, name, err)
+			}
+			if _, err := conn.ExecContext(ctx,
+				`INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+				return fmt.Errorf("%w: recording migration %s: %w", ErrDB, name, err)
+			}
+		}
+		return nil
+	})
 }
 
 // migrationVersion extracts the leading integer from a filename such as

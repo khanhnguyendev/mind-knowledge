@@ -1,6 +1,11 @@
 package store
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"testing"
+)
 
 // countLinks reports how many edges name (kind, id) on either end.
 func countLinks(t *testing.T, s *Store, kind, id string) int {
@@ -227,5 +232,70 @@ func TestDanglingLinksReportsEdgesWithMissingEndpoints(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].FromID != page.ID {
 		t.Errorf("DanglingLinks() = %+v, want the edge from the deleted page", got)
+	}
+}
+
+// TestConcurrentDeletesDoNotFailOnLockUpgrade pins the failure mode a
+// read-then-write transaction has when it opens deferred: the SELECT that
+// collects the cascaded child ids takes a read lock, the first DELETE has
+// to upgrade it, and SQLite answers a lock upgrade it cannot grant with
+// SQLITE_BUSY immediately — without consulting the busy handler, so
+// busy_timeout does not save it.
+//
+// Only one racer can win each delete; the losers must report a clean
+// ErrNotFound, never a database error.
+func TestConcurrentDeletesDoNotFailOnLockUpgrade(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// remove deletes the entity seeded for one round.
+		remove func(s *Store, projectID, epicID string) error
+	}{
+		{"epic", func(s *Store, _, epicID string) error { return s.DeleteEpic(epicID) }},
+		{"project", func(s *Store, projectID, _ string) error { return s.DeleteProject(projectID) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testStore(t)
+
+			const rounds, racers = 6, 8
+			for round := 0; round < rounds; round++ {
+				// A fresh subject each round, with children to cascade to
+				// so the delete has ids to collect before it writes.
+				p, err := s.CreateProject(fmt.Sprintf("p%d", round), "/tmp/p", "")
+				if err != nil {
+					t.Fatalf("CreateProject: %v", err)
+				}
+				e, err := s.CreateEpic(p.ID, "Auth", "")
+				if err != nil {
+					t.Fatalf("CreateEpic: %v", err)
+				}
+				for i := 0; i < 3; i++ {
+					if _, err := s.CreateStory(e.ID, fmt.Sprintf("s%d", i), ""); err != nil {
+						t.Fatalf("CreateStory: %v", err)
+					}
+				}
+
+				errs := make([]error, racers)
+				var wg sync.WaitGroup
+				start := make(chan struct{})
+				for i := 0; i < racers; i++ {
+					wg.Add(1)
+					go func(i int) {
+						defer wg.Done()
+						<-start // barrier: maximize the overlap
+						errs[i] = tc.remove(s, p.ID, e.ID)
+					}(i)
+				}
+				close(start)
+				wg.Wait()
+
+				for i, err := range errs {
+					if err == nil || errors.Is(err, ErrNotFound) {
+						continue
+					}
+					t.Fatalf("round %d racer %d: %v (want success or ErrNotFound, never a database error)",
+						round, i, err)
+				}
+			}
+		})
 	}
 }

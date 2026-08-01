@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -158,7 +159,7 @@ func (s *Store) ListLinks(fromKind, fromID, toKind, toID, relation string) ([]mo
 // and its references always disappear together. Skipping it leaves an edge
 // that permanently vouches for the endpoint that survived — which silently
 // disables wiki.orphans, wiki.uncited, and wiki.unprocessed for it.
-func deleteEntityRefs(tx *sql.Tx, kind string, ids []string) error {
+func deleteEntityRefs(ctx context.Context, conn *sql.Conn, kind string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -174,7 +175,7 @@ func deleteEntityRefs(tx *sql.Tx, kind string, ids []string) error {
 		`DELETE FROM links WHERE to_kind = ? AND to_id IN (` + placeholders + `)`,
 		`DELETE FROM entity_tags WHERE entity_kind = ? AND entity_id IN (` + placeholders + `)`,
 	} {
-		if _, err := tx.Exec(stmt, args...); err != nil {
+		if _, err := conn.ExecContext(ctx, stmt, args...); err != nil {
 			return fmt.Errorf("%w: cleaning %s references: %v", ErrDB, kind, err)
 		}
 	}
@@ -185,27 +186,22 @@ func deleteEntityRefs(tx *sql.Tx, kind string, ids []string) error {
 // entity_tags row naming it, in a single transaction so a partial delete
 // cannot leave the graph inconsistent.
 func (s *Store) deleteEntity(kind, table, id string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("%w: deleting %s: %v", ErrDB, kind, err)
-	}
-	defer tx.Rollback()
-
-	if err := deleteEntityRefs(tx, kind, []string{id}); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, table), id); err != nil {
-		return fmt.Errorf("%w: deleting %s: %v", ErrDB, kind, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("%w: deleting %s: %v", ErrDB, kind, err)
-	}
-	return nil
+	return s.withImmediateTx("deleting "+kind, func(ctx context.Context, conn *sql.Conn) error {
+		if err := deleteEntityRefs(ctx, conn, kind, []string{id}); err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx,
+			fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, table), id); err != nil {
+			return fmt.Errorf("%w: deleting %s: %v", ErrDB, kind, err)
+		}
+		return nil
+	})
 }
 
-// txIDs collects the single-column ids a query returns, inside tx.
-func txIDs(tx *sql.Tx, query string, args ...any) ([]string, error) {
-	rows, err := tx.Query(query, args...)
+// txIDs collects the single-column ids a query returns, inside the
+// caller's transaction.
+func txIDs(ctx context.Context, conn *sql.Conn, query string, args ...any) ([]string, error) {
+	rows, err := conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: collecting ids: %v", ErrDB, err)
 	}
