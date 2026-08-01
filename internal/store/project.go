@@ -102,11 +102,25 @@ func (s *Store) CreateProject(name, repoPath, gitRemote string) (*model.Project,
 }
 
 // GetProject resolves a project by id, falling back to an exact name match.
+// The two lookups are sequential and deliberately so: a single
+// "WHERE id = ? OR name = ?" query would leave the id-first guarantee to
+// whatever plan SQLite's optimizer happens to choose, which is not a
+// property the schema or the query enforces. Doing the id lookup first in
+// Go code makes that precedence explicit and immune to planner changes,
+// table size, or SQLite version — load-bearing since nothing stops a
+// project from being named after another project's id.
 func (s *Store) GetProject(idOrName string) (*model.Project, error) {
-	row := s.db.QueryRow(
-		`SELECT `+projectColumns+` FROM projects WHERE id = ? OR name = ? LIMIT 1`,
-		idOrName, idOrName)
+	row := s.db.QueryRow(`SELECT `+projectColumns+` FROM projects WHERE id = ?`, idOrName)
 	p, err := scanProject(row)
+	if err == nil {
+		return p, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+
+	row = s.db.QueryRow(`SELECT `+projectColumns+` FROM projects WHERE name = ?`, idOrName)
+	p, err = scanProject(row)
 	if errors.Is(err, ErrNotFound) {
 		return nil, fmt.Errorf("%w: no project %q", ErrNotFound, idOrName)
 	}

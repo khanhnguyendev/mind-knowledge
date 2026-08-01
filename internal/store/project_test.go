@@ -85,6 +85,32 @@ func TestGetProjectMissing(t *testing.T) {
 	}
 }
 
+// TestGetProjectPrefersIDOverCollidingName constructs the case where one
+// project's name is literally another project's id. GetProject must resolve
+// such a string to the id match, not whichever row a single "id = ? OR
+// name = ?" query happens to return first.
+func TestGetProjectPrefersIDOverCollidingName(t *testing.T) {
+	s := testStore(t)
+
+	alpha, err := s.CreateProject("alpha", "/tmp/a", "")
+	if err != nil {
+		t.Fatalf("CreateProject alpha: %v", err)
+	}
+	// beta's name is exactly alpha's id, so the two lookup keys collide.
+	if _, err := s.CreateProject(alpha.ID, "/tmp/b", ""); err != nil {
+		t.Fatalf("CreateProject with colliding name: %v", err)
+	}
+
+	got, err := s.GetProject(alpha.ID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if got.ID != alpha.ID || got.Name != "alpha" {
+		t.Errorf("GetProject(%q) = %+v, want the project whose id that is (alpha)",
+			alpha.ID, got)
+	}
+}
+
 func TestListProjectsFiltersByStatus(t *testing.T) {
 	s := testStore(t)
 
