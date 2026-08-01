@@ -1,12 +1,19 @@
 package cli_test
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 )
 
 // initRepo makes a git repository with one commit and returns its path.
+//
+// Env is set explicitly rather than inherited from the running user, so a
+// developer or CI machine with e.g. commit.gpgsign=true and no available
+// key, or a global core.hooksPath pointing at a failing hook, can't make
+// this helper — and therefore every sync test — fail for reasons unrelated
+// to the code under test.
 func initRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -15,6 +22,10 @@ func initRepo(t *testing.T) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"HOME="+dir,
+			"GIT_CONFIG_GLOBAL=/dev/null",
+			"GIT_CONFIG_SYSTEM=/dev/null")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}

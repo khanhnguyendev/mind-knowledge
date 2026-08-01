@@ -1,14 +1,23 @@
 package sync
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/khanhnguyendev/mind-knowledge/internal/model"
 )
 
 // initRepo creates a git repository with one commit and returns its path.
+//
+// Env is set explicitly rather than inherited from the running user, so a
+// developer or CI machine with e.g. commit.gpgsign=true and no available
+// key, or a global core.hooksPath pointing at a failing hook, can't make
+// this helper — and therefore every test that calls it — fail for reasons
+// unrelated to the code under test.
 func initRepo(t *testing.T, remote string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -17,6 +26,10 @@ func initRepo(t *testing.T, remote string) string {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"HOME="+dir,
+			"GIT_CONFIG_GLOBAL=/dev/null",
+			"GIT_CONFIG_SYSTEM=/dev/null")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
@@ -126,6 +139,10 @@ func TestInspectEmptyRepoNoCommits(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command("git", "init", "-q")
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"HOME="+dir,
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_CONFIG_SYSTEM=/dev/null")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
@@ -137,5 +154,58 @@ func TestInspectEmptyRepoNoCommits(t *testing.T) {
 	}
 	if got.Head != "" {
 		t.Errorf("Head = %q, want empty when there is no commit to resolve", got.Head)
+	}
+}
+
+// TestInspectReportsCheckFailedWhenGitMissing covers gitOutput's other
+// failure mode: git could not be run at all, as distinct from running and
+// exiting non-zero. A machine with git absent from PATH must not render
+// identically to a healthy repository with no commits — both currently
+// look like an empty Head/Branch, but only one of them is actually ok.
+func TestInspectReportsCheckFailedWhenGitMissing(t *testing.T) {
+	dir := initRepo(t, "") // build the repo while git is still on PATH
+
+	t.Setenv("PATH", t.TempDir()) // then take git off PATH entirely
+
+	got := Inspect(model.Project{Name: "my-app", RepoPath: dir})
+
+	if got.State != StateCheckFailed {
+		t.Errorf("State = %q, want check-failed when git cannot be run", got.State)
+	}
+	if got.Detail == "" {
+		t.Error("Detail should explain why the check failed")
+	}
+}
+
+// TestGitOutputRespectsTimeout proves gitOutput bounds how long it waits
+// on a hung git process, rather than blocking mk sync forever behind a
+// stale network mount or a wedged git lock. It fakes "git" with a script
+// that sleeps well past a shortened gitTimeout, so the test only waits out
+// the shortened timeout — not something slow or machine-specific.
+func TestGitOutputRespectsTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake git script assumes a POSIX shell")
+	}
+
+	binDir := t.TempDir()
+	fakeGit := filepath.Join(binDir, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\nsleep 100\n"), 0o755); err != nil {
+		t.Fatalf("writing fake git: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	old := gitTimeout
+	gitTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { gitTimeout = old })
+
+	start := time.Now()
+	out, err := gitOutput(t.TempDir(), "status")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("gitOutput returned no error for a hung command, out=%q", out)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("gitOutput took %s, want it to respect the shortened timeout", elapsed)
 	}
 }

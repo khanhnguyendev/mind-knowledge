@@ -39,7 +39,7 @@ func init() {
 				}
 			}
 
-			results := mksync.Run(s, projects)
+			results := mksync.Run(projects)
 			if JSONMode() {
 				return render.JSON(os.Stdout, results)
 			}
