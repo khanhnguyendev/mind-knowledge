@@ -13,6 +13,53 @@ SKILL_TEST_FAILURES=0
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MK="$REPO_ROOT/mk"
 
+# Claude Code resolves "/skill-name" against personal skills in
+# ~/.claude/skills/<name>/SKILL.md (confirmed via `claude --help`'s --bare
+# note: "Skills still resolve via /skill-name") or against an installed
+# plugin's skills/ — this repo is neither until Task 14 packages it as an
+# installed plugin. Until then, a `claude -p` subprocess run from a scratch
+# work_dir has no way to discover skills/<name>/SKILL.md on its own, so the
+# harness symlinks every skill this repo currently ships into the personal
+# skills directory for the duration of the run and removes exactly the
+# links it added on cleanup. Once Task 14 lands, this whole mechanism can be
+# deleted — the plugin install will make the skills discoverable on its own.
+PERSONAL_SKILLS_DIR="$HOME/.claude/skills"
+SKILL_TEST_LINKS=()
+
+link_skills_for_test() {
+  mkdir -p "$PERSONAL_SKILLS_DIR"
+  local dir name target link existing
+  for dir in "$REPO_ROOT"/skills/*/; do
+    name="$(basename "$dir")"
+    [ "$name" = "references" ] && continue
+    [ -f "$dir/SKILL.md" ] || continue
+    target="$REPO_ROOT/skills/$name"
+    link="$PERSONAL_SKILLS_DIR/$name"
+    if [ -L "$link" ]; then
+      # Already a symlink — either a previous crashed run's leftover (safe
+      # to leave; it points at the same place we would point it) or a real
+      # personal skill of the same name pointed elsewhere (never touch
+      # someone else's skill). Either way, don't re-link and don't queue it
+      # for removal — a link we didn't create is not ours to delete.
+      continue
+    elif [ -e "$link" ]; then
+      # A real file or directory, not a symlink: something the user placed
+      # there on purpose. Never clobber it.
+      continue
+    fi
+    ln -s "$target" "$link"
+    SKILL_TEST_LINKS+=("$link")
+  done
+}
+
+unlink_skills_for_test() {
+  local link
+  for link in "${SKILL_TEST_LINKS[@]:-}"; do
+    [ -n "$link" ] && [ -L "$link" ] && rm -f "$link"
+  done
+  SKILL_TEST_LINKS=()
+}
+
 skill_test_init() {
   if ! command -v claude >/dev/null 2>&1; then
     echo "SKIP: claude CLI not on PATH"
@@ -43,10 +90,12 @@ skill_test_init() {
   mk_db="$db_dir/mk.db"
   export MK_DB="$mk_db"
   work_dir=$(mktemp -d /tmp/mkwork-XXXXXX)
+  link_skills_for_test
   trap skill_test_cleanup EXIT
 }
 
 skill_test_cleanup() {
+  unlink_skills_for_test
   rm -rf "$db_dir"
   rm -rf "$work_dir"
 }
@@ -61,9 +110,21 @@ skill_test_cleanup() {
 # skill_test_done fails the run even if nobody checked the return value. A
 # caller that does want to branch on it directly still can — the real
 # `claude` exit status is returned.
+#
+# $work_dir is a scratch directory `claude` has never seen before, so it
+# starts every run untrusted: the agent's Bash calls (every `mk` and `git`
+# invocation a skill makes) are denied outright rather than prompted for,
+# since there is no terminal to prompt on non-interactively — confirmed by
+# capturing a run's `permission_denials` under `--output-format json`.
+# `--allowedTools "Bash"` grants it for this run only; it is safe to grant
+# broadly here because $work_dir and $mk_db are both disposable scratch
+# state the harness tears down afterward. Prepending $REPO_ROOT to PATH
+# makes the freshly-built `./mk` (not some stale copy elsewhere on the
+# machine) the one the agent's bare `mk` calls resolve to, so a test
+# provably exercises the binary `skill_test_init` just built.
 run_skill() {
   local out status
-  out=$(cd "$work_dir" && MK_DB="$mk_db" claude -p "$1" 2>&1)
+  out=$(cd "$work_dir" && PATH="$REPO_ROOT:$PATH" MK_DB="$mk_db" claude -p "$1" --allowedTools "Bash" 2>&1)
   status=$?
   if [ "$status" -ne 0 ]; then
     echo "  CRASH: run_skill exited $status for prompt: $1"
