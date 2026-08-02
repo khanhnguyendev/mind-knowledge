@@ -13,9 +13,8 @@ Every skill's turn follows the same shape, in this order:
 
 1. **GROUND** — work out which project you're operating on before touching
    anything else.
-2. **WORK** — do the thing this particular skill exists for. This is the
-   only beat that differs from skill to skill; everything else on this page
-   applies to all ten the same way.
+2. **WORK** — do the thing this particular skill exists for, the one beat
+   that differs from skill to skill.
 3. **FILE** — commit the result of WORK to `mk`, using the commands and
    flags documented in `mk-contract.md`.
 4. **SETTLE** — check what your own writes could have disturbed, and leave
@@ -49,35 +48,58 @@ inside WORK.
 
 ## Settling
 
-Settling has two parts, always in this order: run the doctor checks your
-writes could have tripped, then log what happened. Never the reverse, and
-never just one of the two.
+Settling has three parts, always in this order: run doctor, filter what it
+returns down to the checks you own, then log what happened. Never
+reordered, and never skipping any of the three.
 
-**Which doctor checks to run.** Not the whole suite — a skill runs the
-checks that the *kind of write it just made* could plausibly have
-triggered, and nothing else. The rule that generates that list, per skill,
-is: trace each write your WORK beat performed to the doctor check that
-detects that write left in a bad state, and run only those.
+**Which check-types you own.** Not the whole suite — a skill owns the
+check-types that the *kind of write its WORK beat makes* could plausibly
+have triggered, and nothing else. There are two separate patterns that
+generate that ownership; most skills need only the first, a few need both:
 
-For example: any skill that creates a wiki page owns `wiki.orphans` and
-`wiki.uncited`, because a page nothing links to yet, and a page that cites
-no source, are exactly what those two checks find — and a page you just
-wrote a minute ago is the single most likely thing in the whole database to
-be in that state. A skill that never touches wiki pages has no business
-running those two checks; a skill that moves a story to `done` owns
-whatever check watches for that transition being made without its
-prerequisites met. Work out your skill's own list from what it writes, the
-same way — don't borrow another skill's list, and don't reach for the full
-set out of caution. (The catalog of checks and what each one means lives in
-`mk-contract.md`; this is the rule for picking from it, not the list
-itself.)
+1. **A completed write left a bad end state.** The write finished, but what
+   it produced doesn't satisfy some other condition doctor checks for. A
+   skill that creates a wiki page owns `wiki.orphans` and `wiki.uncited`
+   this way: a page nothing links to yet, and a page that cites no source,
+   are exactly what those two checks find, and a page you just wrote a
+   minute ago is the single most likely thing in the whole database to be
+   in that state.
+2. **A multi-step WORK beat stalled before reaching FILE.** Some skills
+   don't write once and stop — they walk an entity through several
+   intermediate steps on the way to a final status, such as review or
+   done, and each intermediate step is a place the beat can be
+   interrupted. A skill built that way owns whatever check catches an
+   entity left sitting in an intermediate status: for a skill that walks a
+   story toward review, that's `story.stranded`. That finding isn't
+   evidence a completed write came out wrong — the write never got that
+   far. It's evidence the WORK beat itself didn't finish.
 
-**Then log, always.** Once the checks have run, add a log entry as the
-final act of the turn, regardless of whether those checks came back clean.
-A skill that files its write but skips the log entry has left no trace
-that it acted; a skill that logs but skips the doctor check has left no
-check on whether the act was clean. Both halves happen, every time, in
-that order.
+Work out your skill's own owned check-types from what its WORK beat
+actually does, by pattern 1, pattern 2, or both — don't borrow another
+skill's list, and don't reach for the full set out of caution. (The
+catalog of checks and what each one means lives in `mk-contract.md`; these
+two patterns are how to pick from it, not the list itself.)
+
+**Running doctor, then filtering.** The command's own filtering only
+narrows by group — wiki-related, story-related, project-related (see
+`mk-contract.md` for the exact flag and grouping) — never by individual
+check and never by entity. A call made to cover one owned check-type will
+also return every other check in that same group, for every entity in the
+project, not only the one you touched this turn. So after the call
+returns, filter its findings yourself: keep only the ones whose check name
+is a check-type you own by the patterns above, and set the rest aside —
+not because they're false, but because they belong to whatever other
+skill's ownership covers that check-type, and reporting the whole group's
+state on every invocation would bury the finding that's actually about
+this turn's work. What survives that filter is what Reporting below
+applies to.
+
+**Then log, always.** Once filtering is done, add a log entry (see
+`mk-contract.md` for the exact command) as the final act of the turn,
+regardless of whether the surviving findings are clean. A skill that files
+its write but skips the log entry has left no trace that it acted; a
+skill that logs but skips the doctor check has left no check on whether
+the act was clean. All three parts happen, every time, in that order.
 
 ## Reporting what doctor said
 
@@ -112,11 +134,21 @@ exactly why the rule has to be "report the finding," not "use judgment
 about whether the finding matters." Judgment is the thing being routed
 around.
 
+Two different tests are in play here and they answer different questions,
+not the same one. Settling's check-type filter already decided, before you
+look at any individual finding, which check-types survive to this point —
+that decision is about ownership, made once. Whether a surviving finding
+also names the specific entity you touched this turn is a second,
+separate question, and it only affects how you describe the finding —
+squarely about your write, versus pre-existing drift of a type you own
+found elsewhere in the project — never whether you surface it. If it
+passed Settling's filter, it goes in the report either way.
+
 | Thought | Reality |
 |---|---|
-| "That finding is pre-existing, not mine" | Check what it names. If it names the entity you just created or moved, it is yours regardless of what state the database was in five minutes ago — you're the one who left it in the state doctor is now describing. |
+| "That finding is pre-existing, not mine" | It might be, if it names an entity you never touched this turn — check. But that only changes how you describe it. It already passed Settling's check-type filter, so silence isn't on the table either way. |
 | "It's cosmetic, doctor is just being picky here" | Doctor has no cosmetic checks. Every check names a condition `mk` itself considers worth flagging — that's why it's in the check list at all. "Picky" is what a rule you'd rather not have tripped sounds like from the inside. |
 | "I'll fold it into my summary instead of calling it out" | A finding mentioned in passing inside an otherwise upbeat summary is a finding that didn't get reported — a user skimming "created the story, done" will not extract a warning buried in clause four. State it as its own fact: doctor found X on the thing you just did. |
 | "I already fixed what caused it, so the finding is stale" | You're reasoning about what doctor *would* say instead of reading what it *did* say. If the fix landed before you ran the check, it won't have fired; if it fired, either the fix didn't land or doctor hasn't seen it yet. Re-run it, or report the finding you actually got — don't substitute a prediction for the output. |
-| "This finding isn't related to what I was asked to do" | Settling scopes which checks run precisely so that nothing unrelated shows up — if a check ran, it's because your write in this turn could have tripped it. A finding from a scoped check is never a stray; if it fired, it's in scope. |
+| "This finding isn't related to what I was asked to do" | The doctor command's own filtering is coarse — group-level only, never per-check or per-entity — so a call covering your owned check-types will still return findings on entities you never touched. Settling's filter already decided the finding belongs in your report by check-type; "not related" describes the entity, not the ownership, and doesn't undo that decision. |
 | "Reporting this makes it look like I did the task badly" | The task included running doctor because `mk` was built assuming skills would surface drift, not hide it when it's unflattering. A clean report that omits a real finding is a worse outcome than an honest one that includes it — the first is wrong, the second is just not glamorous. |
