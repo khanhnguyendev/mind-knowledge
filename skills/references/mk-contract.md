@@ -9,7 +9,16 @@ against `internal/model/model.go`, `internal/doctor/doctor.go`, and
 
 Global flags, available on every command: `--json`, `-p`/`--project`,
 `--limit`, `--db`. `--limit 0` means unlimited; a negative value is
-rejected with exit `2`.
+rejected with exit `2`. `--db` defaults to `$MK_DB`, or
+`~/.mind-knowledge/mk.db` if `$MK_DB` is unset; a skill that wants a
+scratch database for a dry run can set `$MK_DB` rather than passing `--db`
+on every call.
+
+`mk` never writes to stderr, in either plain mode or `--json` mode.
+`render.ErrorOut` sends errors to **stdout** unconditionally — a skill
+that reads stderr to detect a plain-mode failure will see nothing and
+silently swallow the error. Read stdout and check the exit code for both
+output and errors, in both modes.
 
 ## Exit codes
 
@@ -25,9 +34,10 @@ A skill should branch on these, not on message text.
 ## JSON output
 
 - Every read command supports `--json`.
-- With `--json`, errors are printed on **stdout** (not stderr) as
+- With `--json`, errors are printed on stdout as
   `{"error":{"code":<n>,"message":"..."}}`. The exit code still matches
-  `<n>`.
+  `<n>`. (Plain-mode errors are also on stdout, as `error: ...` — see the
+  stderr note above. `--json` only changes the shape, not the stream.)
 - Empty results are `[]`, never `null`.
 - Every command that creates a standalone entity — `project add`,
   `epic create`, `story create`, `wiki add`, `source add`, `log add` —
@@ -50,7 +60,7 @@ misremembered.
 |---|---|---|---|
 | `project` | `add` | `edit --status` | accepted but **ignored** — `mk project ls -p <p>` lists every project anyway; use `mk project view <p>` for one |
 | `epic` | `create` | `mv --to` | scopes the result |
-| `story` | `create` | `mv --to` | scopes the result |
+| `story` | `create` | `mv --to` | scopes the result — but note `-p` on `story create` itself is a silent, unvalidated no-op; see below |
 | `wiki` | `add` | `edit --status` | scopes the result |
 | `source` | `add` | immutable — no status field, no `edit` subcommand | rejected, exit `2` (sources are cross-project) |
 | `link` | `add` | no status | rejected, exit `2` (an edge may join entities in different projects) |
@@ -81,6 +91,13 @@ mk sync
   `unknown flag: --status` (exit `2`).
 - `mk project ls -p <p>` silently lists every project — it is the one place
   `-p` is accepted and meaningless in a way that can mislead.
+- **`mk story create` accepts `-p` and does nothing with it — not even
+  validation.** `mk story create --epic <e> --title x -p totally-bogus`
+  exits `0`. A story's project comes from its epic, not from `-p`; unlike
+  `epic create` (which *requires* `-p` and rejects a bad one with exit
+  `2`), `story create` neither needs nor checks it. Threading `-p` through
+  `story create` the way it's threaded through `epic create` looks correct
+  and produces a silent no-op with no error to notice.
 - `link` and `tag` address their endpoints as `kind:reference` (for
   example `wiki:auth-model` or `story:b4g3l2`); every other command takes a
   bare id, name, or slug.
@@ -101,7 +118,9 @@ mk sync
 | Behaviour | Commands |
 |---|---|
 | scopes the result | `wiki ls`, `wiki index`, `epic ls`, `story ls`, `board`, `log ls`, `sync`, `doctor` |
-| assigns the new record's project | `epic create`, `wiki add`, `log add` |
+| assigns the new record's project, **required** — omitting it is exit `2`, an unknown project is exit `1` | `epic create` |
+| assigns the new record's project, optional | `wiki add`, `log add` |
+| accepted, **not even validated** — `story create` takes its project from its epic, so `-p` on `story create` is a pure no-op that never errors, even for a nonexistent project | `story create` |
 | rejected, exit `2` | `search`, `source *`, `tag *`, `link *` |
 | accepted, ignored | everything else, including `mk project ls` (see above) and single-entity commands like `epic view`, `story mv`, `wiki rm`, `epic edit`, `wiki edit` |
 
