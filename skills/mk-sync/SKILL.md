@@ -127,9 +127,9 @@ ever going to happen inside a reply that never arrives.
 - **Never write to a project's registration without a same-turn answer
   naming that specific project and that specific change.** A proposal
   laid out in step 3 is not approval. Silence on a project, or an answer
-  that addresses some drifted projects but not others, means stop at
-  reporting for the ones not addressed — not guess, not default to the
-  option that looks safest.
+  that addresses some drifted projects but not others, means treat those
+  specific projects as reporting-only for this turn — not guess, not
+  default to the option that looks safest.
 - **Never report `check-failed` as if it were a finding about the
   project.** It is a finding about the check. Conflating the two sends
   someone hunting a problem in a project that may be perfectly fine.
