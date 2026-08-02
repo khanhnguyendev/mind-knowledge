@@ -77,11 +77,11 @@ The only write this skill makes, once past the already-registered check
 in step 1, is the wiki page from step 5 — a brand-new page that nothing
 links to yet and that cites no source yet. Those are exactly the two
 checks this skill owns: `wiki.orphans` and `wiki.uncited`. Run doctor
-scoped to the wiki checks, then filter its findings down to just those
-two check-types — the scope only narrows by group, not by check or by
-entity, so the call also returns findings for every other wiki page in
-the project, and those belong to whatever skill's own writes they trace
-back to, not this turn.
+scoped to the wiki checks and to this project, using the same id captured
+in step 4, then filter its findings down to just those two check-types —
+the scope only narrows by group, not by check or by entity, so the call
+also returns findings for every other wiki page in the project, and those
+belong to whatever skill's own writes they trace back to, not this turn.
 
 Report whatever survives that filter, verbatim, even when it names the
 page this skill just wrote — especially then. A fresh page tripping

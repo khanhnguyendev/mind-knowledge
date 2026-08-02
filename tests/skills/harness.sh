@@ -28,7 +28,7 @@ SKILL_TEST_LINKS=()
 
 link_skills_for_test() {
   mkdir -p "$PERSONAL_SKILLS_DIR"
-  local dir name target link existing
+  local dir name target link
   for dir in "$REPO_ROOT"/skills/*/; do
     name="$(basename "$dir")"
     [ "$name" = "references" ] && continue
@@ -86,10 +86,22 @@ skill_test_init() {
   # substituted on BSD mktemp (macOS), so every call would return the same
   # literal path. Randomize a directory instead, which both BSD and GNU
   # mktemp handle correctly, and put the database inside it.
-  db_dir=$(mktemp -d /tmp/mkskill-XXXXXX)
+  #
+  # `pwd -P` resolves each directory to its canonical, symlink-free form
+  # right after creation. On macOS, /tmp is itself a symlink to
+  # /private/tmp, so mktemp's raw return value and its canonical form are
+  # two different strings naming the same directory — an agent recording
+  # its own location might reach for either one (`pwd` keeps the symlink,
+  # `git rev-parse --show-toplevel` resolves it), and which one it picks
+  # varies run to run. A test that asserts a path came back equal to
+  # `$work_dir` needs `$work_dir` to already be in the one form every path
+  # the agent could report will canonicalize to, or the comparison is a
+  # coin flip. Canonicalize once, here, so every test inherits a stable
+  # value instead of each one having to know to do it.
+  db_dir=$(cd "$(mktemp -d /tmp/mkskill-XXXXXX)" && pwd -P)
   mk_db="$db_dir/mk.db"
   export MK_DB="$mk_db"
-  work_dir=$(mktemp -d /tmp/mkwork-XXXXXX)
+  work_dir=$(cd "$(mktemp -d /tmp/mkwork-XXXXXX)" && pwd -P)
   link_skills_for_test
   trap skill_test_cleanup EXIT
 }
@@ -111,17 +123,35 @@ skill_test_cleanup() {
 # caller that does want to branch on it directly still can — the real
 # `claude` exit status is returned.
 #
-# $work_dir is a scratch directory `claude` has never seen before, so it
-# starts every run untrusted: the agent's Bash calls (every `mk` and `git`
-# invocation a skill makes) are denied outright rather than prompted for,
-# since there is no terminal to prompt on non-interactively — confirmed by
-# capturing a run's `permission_denials` under `--output-format json`.
-# `--allowedTools "Bash"` grants it for this run only; it is safe to grant
-# broadly here because $work_dir and $mk_db are both disposable scratch
-# state the harness tears down afterward. Prepending $REPO_ROOT to PATH
-# makes the freshly-built `./mk` (not some stale copy elsewhere on the
-# machine) the one the agent's bare `mk` calls resolve to, so a test
-# provably exercises the binary `skill_test_init` just built.
+# Two independent fixes live in this one invocation — independent because
+# one is temporary scaffolding and the other is a standing requirement that
+# will outlive it, and conflating them invites someone to delete both when
+# only one stops being needed:
+#
+# - Prepending $REPO_ROOT to PATH makes the freshly-built `./mk` (not some
+#   stale copy elsewhere on the machine) the one the agent's bare `mk`
+#   calls resolve to, so a test provably exercises the binary
+#   `skill_test_init` just built. This has nothing to do with skill
+#   discovery and stays relevant regardless of how a skill gets found.
+#
+# - `--allowedTools "Bash"` exists because $work_dir is a scratch directory
+#   `claude` has never seen before, so it starts every run in default
+#   permission mode: the agent's Bash calls (every `mk` and `git`
+#   invocation a skill makes) are denied outright rather than prompted for,
+#   since there is no terminal to prompt on non-interactively — confirmed
+#   by capturing a run's `permission_denials` under `--output-format json`.
+#   This is NOT tied to the skill-discovery symlinking above and will not
+#   go away when Task 14 makes that unnecessary: a fresh $work_dir starts
+#   untrusted no matter how the skill under test was found, so some grant
+#   will always be needed here. Deliberately unrestricted rather than
+#   narrowed to e.g. `Bash(mk *) Bash(git *)`: later skills in this suite
+#   run project-specific commands the harness cannot enumerate in advance
+#   — `/mk-implement` executes whatever a story's plan calls for,
+#   `/mk-verify` runs "the project's verification commands," which differ
+#   per project and are unknowable here — so a fixed allowlist would block
+#   exactly the skills most in need of running real commands. $work_dir and
+#   $mk_db are both disposable scratch state the harness tears down
+#   afterward, which is what makes the broad grant an acceptable trade.
 run_skill() {
   local out status
   out=$(cd "$work_dir" && PATH="$REPO_ROOT:$PATH" MK_DB="$mk_db" claude -p "$1" --allowedTools "Bash" 2>&1)

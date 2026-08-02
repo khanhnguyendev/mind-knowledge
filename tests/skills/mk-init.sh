@@ -2,7 +2,14 @@
 source "$(dirname "${BASH_SOURCE[0]}")/harness.sh"
 skill_test_init
 
-# A fresh, unregistered directory.
+# A fresh, unregistered directory — pre-initialized as a git repo so the
+# skill's Method step 2 ("is this already a git repository?") finds yes and
+# skips straight past its own confirmation gate. That gate is real,
+# required behaviour (never run `git init` unasked), but this is a single
+# non-interactive turn with no way to answer it, so the fixture avoids
+# triggering it rather than the prompt working around it — a second,
+# separate technique from the name pre-answer below, for a second,
+# separate confirmation point in the same skill.
 git -c init.defaultBranch=main init -q "$work_dir"
 
 # run_skill is one non-interactive turn (`claude -p`) with no way to answer
