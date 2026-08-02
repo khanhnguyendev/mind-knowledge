@@ -22,13 +22,19 @@ skill_test_init() {
     echo "building mk..."
     ( cd "$REPO_ROOT" && make build >/dev/null )
   fi
-  mk_db=$(mktemp -u /tmp/mkskill-XXXXXX.db)
+  # mktemp's `X` substitution is only guaranteed at the end of the
+  # template — a suffix after the `X` run (e.g. `.db`) is silently not
+  # substituted on BSD mktemp (macOS), so every call would return the same
+  # literal path. Randomize a directory instead, which both BSD and GNU
+  # mktemp handle correctly, and put the database inside it.
+  db_dir=$(mktemp -d /tmp/mkskill-XXXXXX)
+  mk_db="$db_dir/mk.db"
   export MK_DB="$mk_db"
   work_dir=$(mktemp -d /tmp/mkwork-XXXXXX)
 }
 
 skill_test_cleanup() {
-  rm -f "$mk_db" "$mk_db-wal" "$mk_db-shm"
+  rm -rf "$db_dir"
   rm -rf "$work_dir"
 }
 
