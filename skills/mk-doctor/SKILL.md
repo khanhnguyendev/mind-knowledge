@@ -55,31 +55,39 @@ description: Use when the user wants to check mk's data for drift — asking for
    points at something absent by design, where the fix is to create
    what's missing rather than edit something that isn't there.
 
-5. **Propose fixes; don't run them yet.** Lay out, per group, what a fix
-   would look like. This is not a stopping point for the turn as a
-   whole, only for step 6's writes: if the request already says what to
-   do with the proposals — apply nothing, apply everything, apply one
-   group — that answer is step 6's input, and steps 6 through Settle
-   still execute, in this same response, before it ends. There is no
-   later turn to resume in; whatever this response doesn't finish never
-   gets finished. Only ask the question and genuinely end the response
-   there when nothing already told you the answer.
+5. **Propose fixes.** Lay out, per group, what a fix would look like —
+   this is information, not a write, and producing it is not a stopping
+   point for the response. Whether or not the request already says what
+   to do with the proposals, this same response continues on through
+   step 6, step 7 (if applicable), and Settle's log entry before it
+   ends — including on a bare request that never mentions fixes at all,
+   which is the ordinary way this skill gets invoked, not an exception
+   to it. The proposal is followed by a question — which groups, if any,
+   to apply — but that question is the *closing line* of an already-
+   complete response, not a place execution pauses to await a reply that
+   isn't coming this turn. There is no later turn to resume in;
+   whatever this response doesn't finish never gets finished.
 
-6. **Apply only what was approved.** For each group the user approved,
-   make the corresponding write using the commands `mk-contract.md`
-   documents for that entity — nothing this skill does here is a special
-   repair path; it is the same create/edit/link vocabulary every other
-   skill uses, aimed at the specific findings just approved. Skip every
-   group that wasn't approved, including ones that look obviously safe.
-   "Obviously safe" is a judgment call this skill does not get to make on
-   the user's behalf.
+6. **Apply only what was already approved.** For each group, make the
+   corresponding write — using the commands `mk-contract.md` documents
+   for that entity; nothing here is a special repair path, it's the same
+   create/edit/link vocabulary every other skill uses — only if the
+   request already stated approval for that specific group before this
+   response started. Skip every group that wasn't, including ones that
+   look obviously safe: "obviously safe" is a judgment call this skill
+   does not get to make on the user's behalf. On a bare request or a
+   request for a report only, no group is approved, so this step
+   correctly applies nothing to anything — that is its normal outcome
+   on most invocations, not a step being skipped.
 
-7. **Re-run and report the delta.** After applying anything in step 6,
-   run doctor again and compare: which approved findings are actually
-   gone, and which are still there because the write didn't fully
-   address what the check looks for. Report that comparison, not a
-   restatement of the plan from step 5 — a fix that was attempted is not
-   the same claim as a fix that was confirmed.
+7. **If step 6 wrote anything, report the delta.** Run doctor again and
+   compare: which approved findings are actually gone, and which are
+   still there because the write didn't fully address what the check
+   looks for. Report that comparison, not a restatement of the plan from
+   step 5 — a fix that was attempted is not the same claim as a fix that
+   was confirmed. If step 6 applied nothing, there is no delta to
+   compute; move on to Settle, whose own confirmatory re-run covers this
+   case.
 
 ## Settle
 
