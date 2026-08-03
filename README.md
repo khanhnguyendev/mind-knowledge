@@ -214,6 +214,66 @@ satisfy them.
 entity's links and tags along with the entity, including those of the
 epics and stories a project delete cascades to.
 
+## Skills
+
+`mk` does CRUD and validation; it does not enforce workflow. The ten
+`/mk-*` Claude Code skills are where the workflow lives — the Socratic
+dialogue, the review gate, the "run the tests now, not an hour ago" rule.
+The binary alone will let a story jump straight to `done` with no plan
+attached; the skills are what stop that, or at least what notices and says
+so afterwards.
+
+Four skills are independent, invoked directly whenever their situation
+comes up:
+
+| Skill | Use when |
+|---|---|
+| `mk-init` | a directory needs to be registered with `mk` |
+| `mk-doctor` | checking mk's data for drift — a health check, an audit |
+| `mk-sync` | checking registered projects against the filesystem |
+| `mk-wiki` | ingesting a source, querying the wiki, or filing an answer back as a page |
+
+The other six form a pipeline, each one picking up what the last one left
+behind:
+
+```
+mk-brainstorm → mk-spec → mk-plan → mk-implement → mk-review → mk-verify
+```
+
+- **`mk-brainstorm`** — Socratic dialogue turning a loose idea into an
+  epic and its stories. Gated: no epic, no story, no scaffolding until a
+  direction is approved.
+- **`mk-spec`** — once a direction is settled enough to be worth writing
+  down for good, turns it into a durable wiki page, reviewed by the user
+  before it counts as finished.
+- **`mk-plan`** — turns a story into an ordered, file-by-file
+  implementation plan.
+- **`mk-implement`** — walks that plan step by step: failing test before
+  implementation, a commit per step, notes updated as it goes. Moves a
+  finished story to `review`, never to `done`.
+- **`mk-review`** — reads the diff the implementation actually produced
+  and grades it by severity, appending findings to the story's notes.
+- **`mk-verify`** — the last arrow. Runs the project's real verification
+  tooling now, on the tree as it stands, and only then closes the story.
+  The only skill in the suite that moves a story to `done`.
+
+Every skill's turn follows the same four-beat shape (GROUND, WORK, FILE,
+SETTLE) — see `skills/references/mk-conventions.md` for the method and
+`skills/references/mk-contract.md` for the CLI surface each skill drives.
+
+### Install
+
+```
+/plugin marketplace add khanhnguyendev/mind-knowledge
+```
+
+The skills shell out to the `mk` binary directly, so `mk` must already be
+on `PATH` — see Install above.
+
+`tests/skills/PRESSURE.md` is a manual checklist for verifying a skill
+still follows its method (not just that the database ends up right) after
+its prose changes.
+
 ## Development
 
 ```bash

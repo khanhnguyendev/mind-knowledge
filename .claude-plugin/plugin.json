@@ -1,0 +1,6 @@
+{
+  "name": "mind-knowledge",
+  "description": "Work items, a wiki built from curated sources, and an activity log for every project on this machine",
+  "version": "0.1.0",
+  "skills": "./skills/"
+}
