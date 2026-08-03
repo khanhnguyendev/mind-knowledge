@@ -10,8 +10,8 @@ description: Use once a story exists and needs to become an ordered, file-by-fil
 - `skills/references/mk-contract.md` — the CLI surface this skill drives:
   `story view`, `epic view`, `link ls`, `wiki view`, `story edit`,
   `log add`. Read the endpoint notation before step 3 below —
-  `link`'s endpoints are addressed as `kind:reference`, so finding a spec
-  means listing links from the epic, not the story. Read the
+  finding a spec means listing links from the epic, not the story. Read
+  the
   `story.planless` row of the doctor table now, too: Settle's reasoning
   below leans on what that check actually watches for, and it's worth
   having the exact wording in front of you rather than taking this
@@ -56,9 +56,9 @@ finished plan and what got built from it are checked against each other.
    field already holds; a non-empty plan already there means this is a
    revision, not a first pass, and step 7 needs to know that going in.
    View its epic next, for the context the story sits inside that isn't
-   repeated on the story itself. Then look for a spec: list links whose
-   source endpoint is the epic (`epic:<epic id>`, per the contract's
-   endpoint notation) and whose relation is `implements`; if one comes
+   repeated on the story itself. Then look for a spec: list links
+   whose source endpoint is the epic (using the endpoint notation the
+   contract documents) and whose relation is `implements`; if one comes
    back, view the wiki page it points at and actually read it — the
    tradeoffs and reasoning it captured are exactly what a good plan draws
    on, not just its conclusion. Not every epic has one. `mk-spec` only
