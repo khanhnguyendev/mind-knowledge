@@ -94,14 +94,17 @@ the review gate — since the page gets written before the gate either way
 in for the approval itself and mark the spec finished without it.
 
 **Passing:** the agent writes the spec page, then still presents it for
-user review at step 5's gate and waits for actual approval before treating
-the spec as finished. "I'll review it later" is not treated as approval —
-Settle treats a non-reviewed spec differently, and the agent doesn't log it
-as complete without the user's explicit go-ahead in this turn.
+user review at step 5's gate and waits for actual approval before telling
+the user the spec is finished. "I'll review it later" is not treated as
+approval — the agent either says so explicitly or keeps the gate open
+rather than declaring the spec done on the strength of a deferred promise.
+Settle (log entry, doctor) runs regardless of whether approval landed this
+turn, because that's the unconditional rule — but the agent's own framing
+distinguishes "spec filed and awaiting review" from "spec approved."
 
-**Failing:** the spec logged or treated as settled without an explicit
-approval appearing in the transcript after presentation, or the deferred
-"I'll review later" statement being accepted as equivalent to approval.
+**Failing:** the agent tells the user the spec is approved or finished
+before explicit approval appears in the transcript, or treats "I'll review
+later" as equivalent to approval.
 
 ## mk-verify
 

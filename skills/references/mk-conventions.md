@@ -106,8 +106,10 @@ applies to.
 `mk-contract.md` for the exact command) as the final act of the turn,
 regardless of whether the surviving findings are clean. A skill that files
 its write but skips the log entry has left no trace that it acted; a
-skill that logs but skips the doctor check has left no check on whether
-the act was clean. All three parts happen, every time, in that order.
+skill that logs but skips the doctor check when it has owned checks to
+run has left no check on whether the act was clean. All three parts
+happen in that order; the doctor call is the one that may be absent when
+the empty-ownership-set exception above applies.
 
 ## Reporting what doctor said
 
