@@ -10,11 +10,12 @@ description: Use when the user wants a source brought into the wiki, a question 
 - `skills/references/mk-contract.md` — the CLI surface this skill drives:
   `source add|ls|view`, `wiki add|edit|ls|view|index`, `link add|ls`,
   `doctor` (scoped to the wiki checks), `log add`. Read the note that
-  `source add` never fetches over the network and reads `--body`,
-  `--file`, `--asset`, or stdin — piping is the normal path for content
-  this skill itself fetched. Read the `wiki.missing` note before Settle
-  below: that check's finding names a page slug that does not exist, not
-  a broken reference to something that does.
+  `source add` never fetches over the network — piping is the normal
+  path for content this skill itself fetched; the contract documents
+  which flags control how `source add` receives its input. Read the
+  `wiki.missing` note before Settle below: that check's finding names a
+  page slug that does not exist, not a broken reference to something
+  that does.
 - `skills/references/mk-conventions.md` — the four beats, grounding, and
   the settling rule about reporting what doctor said verbatim, including
   when it's inconvenient.
@@ -66,8 +67,8 @@ operation the request turns out to need.
 
 The agent fetches or reads the source itself — a local file, a paste, the
 result of its own web fetch — and pipes that content into `source add`,
-recording where it came from with `--uri`. **`mk` has no network path by
-design.** That is a property of the shipped binary worth protecting, not
+recording provenance the way the contract documents. **`mk` has no
+network path by design.** That is a property of the shipped binary worth protecting, not
 an implementation detail this skill works around: nothing in this method
 ever asks `mk` to fetch a URL, and nothing about doing this skill's job
 well would require that to change. The fetching is this skill's work,
@@ -77,10 +78,10 @@ what's handed to it and record where it said it came from.
 Then:
 
 1. **Capture the source.** `source add` with a title, the appropriate
-   kind, and the content piped in or passed via `--file`/`--body`. Its
-   provenance goes in `--uri` — a file path, a URL, whatever locates the
-   original outside `mk`. Capture the id `source add` prints; the link
-   step needs it.
+   kind, and the content delivered through whichever input method the
+   contract documents for that command. Record provenance — a file path,
+   a URL, whatever locates the original outside `mk`. Capture the id
+   `source add` prints; the link step needs it.
 
 2. **Read the existing wiki before writing anything.** `wiki index` first
    — it exists so this decision doesn't require reading every page to
@@ -225,8 +226,8 @@ clean.
 - **Never give `mk` a URL to fetch.** Fetching is this skill's own job,
   done before `source add` is ever called; `mk` stores content and
   records where it said it came from, and it has no network path to lose
-  by staying that way. Piping fetched or read content into `--body`,
-  `--file`, or stdin is the only path in.
+  by staying that way. The contract documents how `source add` receives
+  its input; all of those paths are local.
 - **Never treat a `wiki.missing` id as something to look up.** It names a
   slug with no page behind it, on purpose — that's what the check found.
   Proposing to "view" or "fix" it as if it already existed is a fix aimed
