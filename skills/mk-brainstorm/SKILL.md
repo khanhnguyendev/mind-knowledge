@@ -9,9 +9,9 @@ description: Use when the user wants to think through a new piece of work before
 
 - `skills/references/mk-contract.md` — the CLI surface this skill drives:
   `epic create`, `story create`, `doctor` (scoped to the stories checks),
-  `log add`. Read the `-p` table's `epic create` row before Ground below —
-  it is the one create command where `-p` is required, and an unknown
-  project is exit `1`, not a silent no-op.
+  `log add`. Read the `-p` table's `epic create` row before Ground
+  below — it is the one create command where an unresolvable project
+  fails loudly rather than silently no-opping.
 - `skills/references/mk-conventions.md` — the four beats, grounding, and
   the settling rule about reporting what doctor said verbatim, including
   when it's inconvenient.

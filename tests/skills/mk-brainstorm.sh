@@ -22,6 +22,9 @@ git -c init.defaultBranch=main init -q "$work_dir"
 # the project name has to be pre-supplied too, same as mk-init.sh does.
 run_skill "/mk-brainstorm I want to add a CSV export feature to this project. If this directory isn't registered yet, name the project csv-export-test and proceed without asking anything else about that. Skip the questions and the menu of approaches — I already approve this direction: add a straightforward 'mk export csv' command that reads the existing data model and writes rows to stdout. Go ahead and break it into an epic with at least two stories and file it now."
 
+assert_json "project ls" 'length == 1' "exactly one project registered"
+assert_json "project ls" '.[0].repo_path == "'"$work_dir"'"' "project registered at the working directory"
+
 assert_json "epic ls"  'length == 1' "created exactly one epic"
 assert_json "story ls" 'length >= 2' "broke the epic into at least two stories"
 
