@@ -80,7 +80,7 @@ fi
 if [ -x "$work_dir/greet.sh" ]; then
   echo "  ok: greet.sh is executable"
 else
-  echo "  FAIL: greet.sh is executable"
+  echo "  FAIL: greet.sh is not executable"
   SKILL_TEST_FAILURES=$((SKILL_TEST_FAILURES + 1))
 fi
 
@@ -90,7 +90,7 @@ commit_count=$(git -C "$work_dir" log --oneline | wc -l | tr -d ' ')
 if [ "$commit_count" -gt 1 ]; then
   echo "  ok: more than the seed commit exists ($commit_count total)"
 else
-  echo "  FAIL: more than the seed commit exists ($commit_count total)"
+  echo "  FAIL: expected more than the seed commit ($commit_count total)"
   SKILL_TEST_FAILURES=$((SKILL_TEST_FAILURES + 1))
 fi
 

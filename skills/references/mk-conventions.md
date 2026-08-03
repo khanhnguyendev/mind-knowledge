@@ -50,7 +50,15 @@ inside WORK.
 
 Settling has three parts, always in this order: run doctor, filter what it
 returns down to the checks you own, then log what happened. Never
-reordered, and never skipping any of the three.
+reordered, and never skipping any of the three — with one narrow exception:
+if a skill's owned check-types are provably empty for the write it made (or
+didn't make) this turn, the doctor call itself has nothing to check and is
+skipped. `mk-plan` skips it because no check can fire on a plan-field
+write; `mk-review` and `mk-verify` skip it on turns where their doctor call
+is conditional on a write that didn't happen. This is not license to skip
+doctor when in doubt — it only applies when the empty set is provable from
+the skill's own ownership, worked out ahead of time, not decided in the
+moment.
 
 **Which check-types you own.** Not the whole suite — a skill owns the
 check-types that the *kind of write its WORK beat makes* could plausibly
