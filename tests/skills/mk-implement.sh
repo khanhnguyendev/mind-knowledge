@@ -72,7 +72,7 @@ assert_json "epic ls" 'length == 1' "still exactly one epic"
 if [ -f "$work_dir/greet.sh" ]; then
   echo "  ok: greet.sh was created"
 else
-  echo "  FAIL: greet.sh was created"
+  echo "  FAIL: greet.sh was not created"
   echo "    expected file at $work_dir/greet.sh"
   SKILL_TEST_FAILURES=$((SKILL_TEST_FAILURES + 1))
 fi
